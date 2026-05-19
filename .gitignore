@@ -21,6 +21,6 @@ htmlcov/
 
 .idea/
 
-
+postgres_data/
 .DS_Store
 .directory
