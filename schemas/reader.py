@@ -3,8 +3,8 @@ from datetime import date
 
 
 class ReaderInput(BaseModel):
-    full_name: str = Field(..., max_length=30)
-    book_id: int = Field(..., ge=0)
+    full_name: str = Field(..., max_length=30, examples=['Kirill Ryabov'])
+    book_id: int = Field(..., ge=0, examples=[1])
     issue_date: date = Field(default_factory=date.today)
 
 
@@ -19,6 +19,6 @@ class ReaderResponse(BaseModel):
 
 
 class ReaderUpdate(BaseModel):
-    full_name: str | None = Field(default=None, max_length=30)
-    book_id: int | None = Field(default=None, ge=0)
-    issue_date: date | None = Field(default_factory=date.today)
+    full_name: str | None = Field(default=None, max_length=30, examples=['Kirill Ryabov'])
+    book_id: int | None = Field(default=None, ge=0, examples=[1])
+    issue_date: date | None = Field(default_factory=date.today, examples=["2025-07-10"])
