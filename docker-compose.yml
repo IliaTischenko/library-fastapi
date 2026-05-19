@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: fastapi_library_db
+    restart: always
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: 1234
+      POSTGRES_DB: f_l_db
+    ports:
+    - "5432:5432"
+    volumes:
+    - postgres_data:/home/tejubusion/PycharmProjects/library-fastapi/postgres_data
+
+volumes:
+  postgres_data:
