@@ -1,13 +1,12 @@
 from fastapi import FastAPI
 from routers import autors, books, readers
 from contextlib import asynccontextmanager
-from database import engine, init_db
+from database import engine, init_db_local
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await init_db()
-
+    await init_db_local()
     yield
     await engine.dispose()
 
