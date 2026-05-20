@@ -2,7 +2,7 @@ from typing import Optional
 from fastapi import APIRouter, status, Query, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 
 from database import get_db_session
 from schemas.book import BookInput, BookUpdate, BookResponse
@@ -27,38 +27,36 @@ async def get_books(
     if book_title:
         query = query.where(Book.title.ilike(f"%{book_title}%"))
 
-    query = query.options(joinedload(Book.author))
+    query = query.options(selectinload(Book.author))
     result = await db_session.execute(query)
     return result.scalars().all()
 
-    # GET /?name=Иван&book_title=Гарри
 
 @router.post("/", status_code=status.HTTP_201_CREATED, response_model=BookResponse)
 async def create_book(book_data: BookInput, db_session: AsyncSession = Depends(get_db_session)):
-    query = select(Author).where(Author.id == book_data.author_id)
-    result = await db_session.execute(query)
-    author = result.scalar_one_or_none()
+    db_author = await db_session.get(Author, book_data.author_id)
 
-    if author is None:
+    if db_author is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Author with this id is not found"
         )
 
 
+    #TODO ДОБАВИТЬ список читателей list[int] в поле обьекта new_book.readers
     new_book = Book(**book_data.model_dump())
     db_session.add(new_book)
     await db_session.commit()
-    await db_session.refresh(new_book, attribute_names=["id", "author"])
-    #new_book.author = author
+    await db_session.refresh(new_book)
+    new_book.author = db_author
+    #todo при выводе поле new_book.readers - список обьектов reader которые тоже содержат ссылки на book
+    #todo сделать короткие схемы для книг и читателей(без циклических ссылок)
     return new_book
 
 
 @router.put(path="/{book_id}", status_code=status.HTTP_200_OK, response_model=BookResponse)
 async def put_book(book_id: int, book_data: BookInput, db_session:AsyncSession = Depends(get_db_session)):
-    book_query = select(Book).where(Book.id == book_id).options(joinedload(Book.author))
-    book_result = await db_session.execute(book_query)
-    db_book = book_result.scalar_one_or_none()
+    db_book = await db_session.get(Book, book_id)
 
     if db_book is None:
         raise HTTPException(
@@ -66,11 +64,9 @@ async def put_book(book_id: int, book_data: BookInput, db_session:AsyncSession =
             detail="Book is not found"
         )
 
-    autor_query = select(Author).where(Author.id == book_data.author_id)
-    author_result = await db_session.execute(autor_query)
-    author = author_result.scalar_one_or_none()
+    db_author = await db_session.get(Author, book_data.author_id)
 
-    if author is None:
+    if db_author is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Author with this id is not found"
@@ -82,16 +78,14 @@ async def put_book(book_id: int, book_data: BookInput, db_session:AsyncSession =
         setattr(db_book, key, val)
 
     await db_session.commit()
-
-    db_book.author = author
+    db_book.author = db_author
 
     return db_book
 
+
 @router.patch(path="/{book_id}", status_code=status.HTTP_200_OK, response_model=BookResponse)
 async def patch_book(book_id: int, book_data: BookInput, db_session:AsyncSession = Depends(get_db_session)):
-    query = select(Book).where(Book.id == book_id).options(joinedload(Book.author))
-    result = await db_session.execute(query)
-    db_book = result.scalar_one_or_none()
+    db_book = await db_session.get(Book, book_id)
 
     if db_book is None:
         raise HTTPException(
@@ -100,11 +94,9 @@ async def patch_book(book_id: int, book_data: BookInput, db_session:AsyncSession
         )
 
     if book_data.author_id:
-        autor_query = select(Author).where(Author.id == book_data.author_id)
-        author_result = await db_session.execute(autor_query)
-        author = author_result.scalar_one_or_none()
+        db_author = await db_session.get(Author, book_data.author_id)
 
-        if author is None:
+        if db_author is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Author with this id is not found"
@@ -117,14 +109,14 @@ async def patch_book(book_id: int, book_data: BookInput, db_session:AsyncSession
         setattr(db_book, key, val)
 
     await db_session.commit()
+    db_book.author = db_author
 
     return db_book
 
+
 @router.delete("/{book_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_book(book_id: int, db_session: AsyncSession = Depends(get_db_session)):
-    query = select(Book).where(Book.id == book_id)
-    result = await db_session.execute(query)
-    db_book = result.scalar_one_or_none()
+    db_book = await db_session.get(Book, book_id)
 
     if db_book is None:
         raise HTTPException(

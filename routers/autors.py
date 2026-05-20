@@ -27,6 +27,7 @@ async def get_authors(
     authors = result.scalars().all()
     return authors
 
+
 @router.post("/", status_code=status.HTTP_201_CREATED, response_model=AuthorResponse)
 async def create_author(author_data: AuthorInput, db_session: AsyncSession = Depends(get_db_session)):
     new_author = Author(**author_data.model_dump())
@@ -35,11 +36,10 @@ async def create_author(author_data: AuthorInput, db_session: AsyncSession = Dep
     await db_session.refresh(new_author)
     return new_author
 
+
 @router.put(path="/{author_id}", status_code=status.HTTP_200_OK, response_model=AuthorResponse)
 async def put_author(author_id: int, author_data: AuthorInput, db_session: AsyncSession = Depends(get_db_session)):
-    query = select(Author).where(Author.id == author_id)
-    result = await db_session.execute(query)
-    db_author = result.scalar_one_or_none()
+    db_author = await db_session.get(Author, author_id)
 
     if db_author is None:
         raise HTTPException(
@@ -57,11 +57,10 @@ async def put_author(author_id: int, author_data: AuthorInput, db_session: Async
 
     return db_author
 
+
 @router.patch(path="/{author_id}", status_code=status.HTTP_200_OK)
 async def patch_author(author_id: int, author_data: AuthorUpdate, db_session: AsyncSession = Depends(get_db_session)):
-    query = select(Author).where(Author.id == author_id)
-    result = await db_session.execute(query)
-    db_author = result.scalar_one_or_none()
+    db_author = await db_session.get(Author, author_id)
 
     if db_author is None:
         raise HTTPException(
@@ -76,19 +75,18 @@ async def patch_author(author_id: int, author_data: AuthorUpdate, db_session: As
 
     return db_author
 
+
 @router.delete("/{author_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_author(author_id: int, db_session: AsyncSession = Depends(get_db_session)):
-    query = select(Author).where(Author.id == author_id)
-    result = await db_session.execute(query)
-    author = result.scalar_one_or_none()
+    db_author = await db_session.get(Author, author_id)
 
-    if author is None:
+    if db_author is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Author is not found"
         )
 
-    await db_session.delete(author)
+    await db_session.delete(db_author)
     await db_session.commit()
 
     return None
