@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date
 from sqlalchemy import Column, Integer, Table, ForeignKey
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 
@@ -16,6 +16,8 @@ class Author(Base):
     __tablename__ = "author"
     id: Mapped[int] = mapped_column(primary_key=True)
     full_name: Mapped[str] = mapped_column(nullable=False)
+    country: Mapped[str] = mapped_column(nullable=False)
+    birth_date: Mapped[date] = mapped_column(nullable=False)
     books: Mapped[list["Book"]] = relationship(
         "Book",
         back_populates='author',
@@ -48,4 +50,4 @@ class Reader(Base):
         "Book",
         secondary=book_reader_association,
         back_populates="readers")
-    issue_date:Mapped[datetime] = mapped_column(nullable=False)
+    issue_date:Mapped[date] = mapped_column(nullable=False)

@@ -27,6 +27,14 @@ async def init_db_local():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
+
+async def drop_db():
+    from models import Author, Book, Reader
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+
+
 async def get_db_session():
     async with AsyncSessionLocal() as session:
         yield session
