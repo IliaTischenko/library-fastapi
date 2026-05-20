@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, String, Table, ForeignKey, DateTime
-from sqlalchemy.orm import relationship
+from datetime import datetime
+from sqlalchemy import Column, Integer, Table, ForeignKey
+from sqlalchemy.orm import relationship, Mapped, mapped_column
 
 from database import Base
 
@@ -13,9 +14,9 @@ book_reader_association = Table(
 
 class Author(Base):
     __tablename__ = "author"
-    id = Column(Integer, primary_key=True)
-    full_name = Column(String, nullable=False)
-    books = relationship(
+    id: Mapped[int] = mapped_column(primary_key=True)
+    full_name: Mapped[str] = mapped_column(nullable=False)
+    books: Mapped[list["Book"]] = relationship(
         "Book",
         back_populates='author',
         cascade="all, delete-orphan"
@@ -24,15 +25,15 @@ class Author(Base):
 
 class Book(Base):
     __tablename__ = "book"
-    id = Column(Integer, primary_key=True)
-    title = Column(String, nullable=False)
-    page = Column(Integer, nullable=False)
-    author_id = Column(Integer, ForeignKey("author.id"), nullable=False, ondelete="CASCADE")
-    author = relationship(
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(nullable=False)
+    page: Mapped[int] = mapped_column(nullable=False)
+    author_id: Mapped[int] = mapped_column(ForeignKey("author.id"), nullable=False, ondelete="CASCADE")
+    author: Mapped["Author"] = relationship(
         "Author",
         back_populates='books'
     )
-    readers = relationship(
+    readers: Mapped[list["Reader"]] = relationship(
         "Reader",
         secondary=book_reader_association,
         back_populates='books'
@@ -41,10 +42,10 @@ class Book(Base):
 
 class Reader(Base):
     __tablename__ = 'reader'
-    id = Column(Integer, primary_key=True)
-    full_name = Column(String, nullable=False)
-    books = relationship(
+    id: Mapped[int] = mapped_column(primary_key=True)
+    full_name: Mapped[str] = mapped_column(nullable=False)
+    books: Mapped[list["Book"]] = relationship(
         "Book",
         secondary=book_reader_association,
         back_populates="readers")
-    issue_date = Column(DateTime, nullable=False)
+    issue_date:Mapped[datetime] = mapped_column(nullable=False)
