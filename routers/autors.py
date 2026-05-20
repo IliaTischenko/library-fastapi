@@ -1,46 +1,96 @@
+
 from typing import Optional
-from fastapi import APIRouter, status, Query, Depends
-from schemas.author import AuthorInput, AuthorUpdate
+from fastapi import APIRouter, status, Query, Depends, HTTPException
+from schemas.author import AuthorInput, AuthorUpdate, AuthorResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_db_session
+from models import Author
 
 
 router = APIRouter(prefix='/authors', tags=["Authors"])
 
-@router.get("/", status_code=status.HTTP_200_OK)
-def get_authors(
-        name: Optional[str] = Query(None, description="Search by name"),
-        book_title: Optional[str] = Query(None, description="Search by book title")
+@router.get("/", status_code=status.HTTP_200_OK, response_model=list[AuthorResponse])
+async def get_authors(
+        author_name: Optional[str] = Query(None, description="Search by name"),
+        country: Optional[str] = Query(None, description="Search by country"),
+        db_session: AsyncSession = Depends(get_db_session)
 ):
-    # query = select(Reader)
-    #
-    # # 2. Каждый фильтр добавляется НЕЗАВИСИМО. Они автоматически объединятся через AND
-    # if name:
-    #     query = query.where(Reader.name.ilike(f"%{name}%"))
-    #
-    # if book_title:
-    #     query = query.where(Reader.book_title.ilike(f"%{book_title}%"))
-    #
-    # # 3. Выполняем итоговый запрос. SQLAlchemy сам соберет нужную комбинацию!
-    # result = await db.execute(query)
-    # return result.scalars().all()
-    return {"all"}
+    query = select(Author)
+    if author_name:
+        query = query.where(Author.full_name.ilike(f"%{author_name}%"))
 
-@router.post("/", status_code=status.HTTP_201_CREATED)
-def create_author(author_data: AuthorInput, db_session: AsyncSession = Depends(get_db_session)):
+    if country:
+        query = query.where(Author.country.ilike(country))
 
-    return {"message": "a"}
+    result = await db_session.execute(query)
+    authors = result.scalars().all()
+    return authors
 
-@router.put(path="/{author_id}", status_code=status.HTTP_200_OK)
-def put_author(new_author: AuthorInput):
-    return {"213"}
+@router.post("/", status_code=status.HTTP_201_CREATED, response_model=AuthorResponse)
+async def create_author(author_data: AuthorInput, db_session: AsyncSession = Depends(get_db_session)):
+    new_author = Author(**author_data.model_dump())
+    db_session.add(new_author)
+    await db_session.commit()
+    await db_session.refresh(new_author)
+    return new_author
+
+@router.put(path="/{author_id}", status_code=status.HTTP_200_OK, response_model=AuthorResponse)
+async def put_author(author_id: int, author_data: AuthorInput, db_session: AsyncSession = Depends(get_db_session)):
+    query = select(Author).where(Author.id == author_id)
+    result = await db_session.execute(query)
+    db_author = result.scalar_one_or_none()
+
+    if db_author is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Author is not found"
+        )
+
+    update_data = author_data.model_dump()
+
+    for key,val in update_data.items():
+        setattr(db_author, key, val)
+
+    await db_session.commit()
+    await db_session.refresh(db_author)
+
+    return db_author
 
 @router.patch(path="/{author_id}", status_code=status.HTTP_200_OK)
-def patch_author(author_id: int, new_author: AuthorUpdate):
-    return "3"
+async def patch_author(author_id: int, author_data: AuthorUpdate, db_session: AsyncSession = Depends(get_db_session)):
+    query = select(Author).where(Author.id == author_id)
+    result = await db_session.execute(query)
+    db_author = result.scalar_one_or_none()
+
+    if db_author is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Author is not found"
+        )
+
+    update_data = author_data.model_dump(exclude_unset=True)
+
+    for key, val in update_data.items():
+        setattr(db_author, key, val)
+
+    return db_author
 
 @router.delete("/{author_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_author(author_id: int):
-    return {"message": "a"}
+async def delete_author(author_id: int, db_session: AsyncSession = Depends(get_db_session)):
+    query = select(Author).where(Author.id == author_id)
+    result = await db_session.execute(query)
+    author = result.scalar_one_or_none()
+
+    if author is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Author is not found"
+        )
+
+    await db_session.delete(author)
+    await db_session.commit()
+
+    return None
 
 

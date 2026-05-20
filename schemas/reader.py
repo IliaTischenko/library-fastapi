@@ -4,7 +4,7 @@ from datetime import date
 
 class ReaderInput(BaseModel):
     full_name: str = Field(..., max_length=30, examples=['Kirill Ryabov'])
-    books_ids: list[conint(ge=0)] = Field(..., min_length=1, examples=[[0, 1]])
+    books_ids: list[conint(ge=0)] = Field(examples=[[0, 1]])
     issue_date: date = Field(default_factory=date.today)
 
 

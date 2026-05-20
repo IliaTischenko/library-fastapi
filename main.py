@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from routers import autors, books, readers
 from contextlib import asynccontextmanager
-from database import engine, init_db_local
+from database import engine, init_db_local, drop_db
 
 
 @asynccontextmanager
@@ -30,3 +30,8 @@ app.include_router(readers.router)
 @app.get('/')
 def root():
     return {"message": "LibraryAPI root"}
+
+@app.get('/drop_db')
+async def drop():
+    await drop_db()
+    return {"m":"db dropped"}
