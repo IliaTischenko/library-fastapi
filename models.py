@@ -27,8 +27,8 @@ class Book(Base):
     __tablename__ = "book"
     id: Mapped[int] = mapped_column(primary_key=True)
     title: Mapped[str] = mapped_column(nullable=False)
-    page: Mapped[int] = mapped_column(nullable=False)
-    author_id: Mapped[int] = mapped_column(ForeignKey("author.id"), nullable=False, ondelete="CASCADE")
+    pages: Mapped[int] = mapped_column(nullable=False)
+    author_id: Mapped[int] = mapped_column(ForeignKey("author.id", ondelete="CASCADE"), nullable=False)
     author: Mapped["Author"] = relationship(
         "Author",
         back_populates='books'

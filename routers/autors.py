@@ -1,6 +1,8 @@
 from typing import Optional
-from fastapi import APIRouter, status, Query
+from fastapi import APIRouter, status, Query, Depends
 from schemas.author import AuthorInput, AuthorUpdate
+from sqlalchemy.ext.asyncio import AsyncSession
+from database import get_db_session
 
 
 router = APIRouter(prefix='/authors', tags=["Authors"])
@@ -25,7 +27,8 @@ def get_authors(
     return {"all"}
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
-def create_author(new_author: AuthorInput):
+def create_author(author_data: AuthorInput, db_session: AsyncSession = Depends(get_db_session)):
+
     return {"message": "a"}
 
 @router.put(path="/{author_id}", status_code=status.HTTP_200_OK)

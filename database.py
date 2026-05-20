@@ -22,7 +22,7 @@ AsyncSessionLocal = async_sessionmaker(
     expire_on_commit=False
 )
 
-async def init_db():
+async def init_db_local():
     from models import Author, Book, Reader
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
