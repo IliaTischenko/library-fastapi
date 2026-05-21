@@ -1,7 +1,7 @@
 
 from typing import Optional
 from fastapi import APIRouter, status, Query, Depends, HTTPException
-from schemas.author import AuthorInput, AuthorUpdate, AuthorResponse
+from schemas import AuthorInput, AuthorUpdate, AuthorResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_db_session
@@ -26,6 +26,21 @@ async def get_authors(
     result = await db_session.execute(query)
     authors = result.scalars().all()
     return authors
+
+
+@router.get("/{author_id}", status_code=status.HTTP_200_OK, response_model=AuthorResponse)
+async def get_author_detail(author_id: int, db_session: AsyncSession = Depends(get_db_session)):
+    db_author = await db_session.get(
+        Author,
+        author_id
+    )
+    if db_author is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Author with this id is not found"
+        )
+
+    return db_author
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED, response_model=AuthorResponse)

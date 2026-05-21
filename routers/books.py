@@ -2,34 +2,51 @@ from typing import Optional
 from fastapi import APIRouter, status, Query, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy.orm import selectinload, joinedload, contains_eager
 
 from database import get_db_session
-from schemas.book import BookInput, BookUpdate, BookResponse
-from models import Book, Author
+from schemas import BookInput, BookUpdate, BookResponse, BookResponseShort
+from models import Book, Author, Reader
 
 router = APIRouter(prefix='/books', tags=["Books"])
 
-#TODO замени селекты на get + selectinload/joinedload посмотри где какой полезен
-#TODO думай про mtm для книг и читателей
 
-@router.get("/", status_code=status.HTTP_200_OK, response_model=list[BookResponse])
+@router.get("/", status_code=status.HTTP_200_OK, response_model=list[BookResponseShort])
 async def get_books(
         author_name: Optional[str] = Query(None, description="Search by author name"),
         book_title: Optional[str] = Query(None, description="Search by book title"),
         db_session: AsyncSession = Depends(get_db_session)
 ):
 
-    query = select(Book).join(Book.author)
+    query = select(Book)
     if author_name:
-        query = query.where(Author.full_name.ilike(f"%{author_name}%"))
+        query = query.join(Book.author).where(Author.full_name.ilike(f"%{author_name}%"))
+        query = query.options(contains_eager(Book.author))
+    else:
+        query = query.options(joinedload(Book.author))
 
     if book_title:
         query = query.where(Book.title.ilike(f"%{book_title}%"))
 
-    query = query.options(selectinload(Book.author))
     result = await db_session.execute(query)
     return result.scalars().all()
+
+
+@router.get("/{book_id}", status_code=status.HTTP_200_OK, response_model=BookResponse)
+async def get_book_detail(book_id: int, db_session: AsyncSession = Depends(get_db_session)):
+    db_book = await db_session.get(
+        Book,
+        book_id,
+        options=[selectinload(Book.readers), joinedload(Book.author)]
+    )
+    if db_book is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Book with this id is not found"
+        )
+
+    return db_book
+
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED, response_model=BookResponse)
@@ -43,20 +60,43 @@ async def create_book(book_data: BookInput, db_session: AsyncSession = Depends(g
         )
 
 
-    #TODO ДОБАВИТЬ список читателей list[int] в поле обьекта new_book.readers
-    new_book = Book(**book_data.model_dump())
+    data_dict = book_data.model_dump()
+    readers_ids = data_dict.pop("readers_ids", [])
+    new_book = Book(**data_dict)
+
+    if readers_ids:
+        query = select(Reader).where(Reader.id.in_(readers_ids))
+        result = await db_session.execute(query)
+        readers = result.scalars().all()
+
+        new_book.readers = readers
+
+
     db_session.add(new_book)
+
     await db_session.commit()
     await db_session.refresh(new_book)
-    new_book.author = db_author
-    #todo при выводе поле new_book.readers - список обьектов reader которые тоже содержат ссылки на book
-    #todo сделать короткие схемы для книг и читателей(без циклических ссылок)
-    return new_book
+
+    result = await db_session.execute(
+        select(Book)
+        .options(selectinload(Book.readers), joinedload(Book.author))
+        .where(Book.id == new_book.id)
+    )
+    book_with_relations = result.scalar_one()
+
+    return book_with_relations
+
+
+
 
 
 @router.put(path="/{book_id}", status_code=status.HTTP_200_OK, response_model=BookResponse)
 async def put_book(book_id: int, book_data: BookInput, db_session:AsyncSession = Depends(get_db_session)):
-    db_book = await db_session.get(Book, book_id)
+    db_book = await db_session.get(
+        Book,
+        book_id,
+        options=[selectinload(Book.readers)]
+    )
 
     if db_book is None:
         raise HTTPException(
@@ -73,19 +113,40 @@ async def put_book(book_id: int, book_data: BookInput, db_session:AsyncSession =
         )
 
     update_data = book_data.model_dump()
+    readers_ids = update_data.pop("readers_ids", [])
+
+
+    if readers_ids:
+        query = select(Reader).where(Reader.id.in_(readers_ids))
+        result = await db_session.execute(query)
+        readers = result.scalars().all()
+        db_book.readers = readers
+
 
     for key, val in update_data.items():
         setattr(db_book, key, val)
 
     await db_session.commit()
-    db_book.author = db_author
+    #db_book.author = db_author
 
-    return db_book
+    result = await db_session.execute(
+        select(Book)
+        .options(selectinload(Book.readers), joinedload(Book.author))
+        .where(Book.id == book_id)
+    )
+
+    book_with_relations = result.scalar_one()
+
+    return book_with_relations
 
 
 @router.patch(path="/{book_id}", status_code=status.HTTP_200_OK, response_model=BookResponse)
-async def patch_book(book_id: int, book_data: BookInput, db_session:AsyncSession = Depends(get_db_session)):
-    db_book = await db_session.get(Book, book_id)
+async def patch_book(book_id: int, book_data: BookUpdate, db_session:AsyncSession = Depends(get_db_session)):
+    db_book = await db_session.get(
+        Book,
+        book_id,
+        options=[selectinload(Book.readers)]
+        )
 
     if db_book is None:
         raise HTTPException(
@@ -103,15 +164,30 @@ async def patch_book(book_id: int, book_data: BookInput, db_session:AsyncSession
             )
 
     update_data = book_data.model_dump(exclude_unset=True)
+    readers_ids = update_data.pop("readers_ids", [])
+
+    if readers_ids:
+        query = select(Reader).where(Reader.id.in_(readers_ids))
+        result = await db_session.execute(query)
+        readers = result.scalars().all()
+        db_book.readers = readers
 
 
     for key, val in update_data.items():
         setattr(db_book, key, val)
 
     await db_session.commit()
-    db_book.author = db_author
 
-    return db_book
+    result = await db_session.execute(
+        select(Book)
+        .options(selectinload(Book.readers), joinedload(Book.author))
+        .where(Book.id == book_id)
+    )
+
+    book_with_relations = result.scalar_one()
+
+    return book_with_relations
+
 
 
 @router.delete("/{book_id}", status_code=status.HTTP_204_NO_CONTENT)
