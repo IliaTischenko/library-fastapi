@@ -6,6 +6,7 @@ env/
 
 .env
 .env.[a-zA-Z]*
+!.env.example
 *.env
 secrets.json
 
