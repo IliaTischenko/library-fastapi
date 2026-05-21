@@ -4,9 +4,9 @@ services:
     container_name: fastapi_library_db
     restart: always
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: 1234
-      POSTGRES_DB: f_l_db
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
     ports:
     - "5432:5432"
     volumes:

@@ -1,14 +1,24 @@
+import os
+from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import declarative_base
 
 
-#load_dotenv()
+load_dotenv()
+db_user = os.getenv("DB_USER")
+db_password = os.getenv("DB_PASSWORD")
+db_host = os.getenv("DB_HOST") #db/localhost
+db_port = os.getenv("DB_PORT")
+db_name = os.getenv("DB_NAME")
 
-#local
-DATABASE_URL = "postgresql+asyncpg://user:1234@localhost:5432/f_l_db"
+
+#local old worked
+#DATABASE_URL = "postgresql+asyncpg://user:1234@localhost:5432/f_l_db"
 
 #app in docker
 #DATABASE_URL ="postgresql+asyncpg://user:1234@db:5432/f_l_db"
+
+DATABASE_URL = f"postgresql+asyncpg://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
 
 engine = create_async_engine(
     DATABASE_URL,
