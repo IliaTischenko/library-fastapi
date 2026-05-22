@@ -10,10 +10,15 @@ from sqlalchemy import select
 from models import Reader, Book
 
 
-router = APIRouter(prefix='/readers', tags=["Readers"])
+router = APIRouter(prefix='/readers', tags=["Читатели"])
 
 
-@router.get("/", status_code=status.HTTP_200_OK, response_model=list[ReaderResponse])
+@router.get(
+    "/",
+    status_code=status.HTTP_200_OK,
+    response_model=list[ReaderResponse],
+    summary="Получить список читателей с фильтрацией"
+)
 async def get_readers(
         name: Optional[str] = Query(None, description="Search by reader name"),
         book_title: Optional[str] = Query(None, description="Search reader with book title"),
@@ -21,6 +26,14 @@ async def get_readers(
         end_date: Optional[date] = Query(None, description="Search to date (at start_date)"),
         db_session: AsyncSession = Depends(get_db_session)
 ):
+    """
+    Получить список читателей с возможностью фильтациии, подтягивает список книг читателя(mtm связь)
+    - **name**: поиск по имени читателя(частичное совпадение)
+    - **book_title**: поиск по названию книги которую читатель брал(частичное совпадение)
+    - **start_date**: поиск после указанной даты выдачи книг
+    - **end_date** поиск до указанной даты выдачи книг
+    в случае указания двух параметров start_date и end_date поиск осуществляется в диапазоне этих дат
+    """
 
     query = select(Reader).options(selectinload(Reader.books).joinedload(Book.author))
     if name:
@@ -44,8 +57,20 @@ async def get_readers(
     return readers
 
 
-@router.get("/{reader_id}", status_code=status.HTTP_200_OK, response_model=ReaderResponse)
+@router.get(
+    "/{reader_id}",
+    status_code=status.HTTP_200_OK,
+    response_model=ReaderResponse,
+    summary="Получить читателя по ID",
+    responses={
+        404: {"description": "Читатель с указанным ID не найден"}
+    }
+)
 async def get_reader_detail(reader_id: int, db_session:AsyncSession = Depends(get_db_session)):
+    """
+    Возвращает подробную информацию о читателе по его уникальному ID, подтягивает список книг читателя(m2m связь)
+    - **reader_id**: ID читателя
+    """
     db_reader = await db_session.get(
         Reader,
         reader_id,
@@ -59,8 +84,25 @@ async def get_reader_detail(reader_id: int, db_session:AsyncSession = Depends(ge
 
     return db_reader
 
-@router.post("/", status_code=status.HTTP_201_CREATED, response_model=ReaderResponse)
+
+@router.post(
+    "/",
+    status_code=status.HTTP_201_CREATED,
+    response_model=ReaderResponse,
+    summary="Создать нового читателя",
+)
 async def create_reader(reader_data: ReaderInput, db_session: AsyncSession = Depends(get_db_session)):
+    """
+    Принимает JSON-объект с данными читателя, валидирует их
+    проверяет наличие указанных книг в БД,
+    добавляет только существующие книги.
+
+    - **reader_data**: Данные для создания читателя(схема ReaderInput)
+
+    Возвращает объект созданного читателя с присвоенным ID из БД,
+     подтягивает его книги(mtm связь) и их авторов(Book.author 1tm связь)
+    """
+
     data_dict = reader_data.model_dump()
     books_ids = data_dict.pop("books_ids", [])
     new_reader = Reader(**data_dict)
@@ -73,7 +115,6 @@ async def create_reader(reader_data: ReaderInput, db_session: AsyncSession = Dep
 
     db_session.add(new_reader)
     await db_session.commit()
-    await db_session.refresh(new_reader)
 
     result = await db_session.execute(
         select(Reader)
@@ -85,8 +126,27 @@ async def create_reader(reader_data: ReaderInput, db_session: AsyncSession = Dep
     return reader_with_relations
 
 
-@router.put("/{reader_id}", status_code=status.HTTP_200_OK, response_model=ReaderResponse)
+@router.put(
+    "/{reader_id}",
+    status_code=status.HTTP_200_OK,
+    response_model=ReaderResponse,
+    summary="Обновить\Заменить читателя по ID",
+    responses={
+        404: {"description": "Читатель с указанным ID не найден"}
+    })
 async def put_reader(reader_id: int, reader_data: ReaderInput, db_session: AsyncSession = Depends(get_db_session)):
+    """
+    Полное обновление (замена) данных читателя.
+
+    Принимает JSON-объект с данными читателя, валидирует их,
+    проверяет наличие указанных книг в БД,
+    добавляет только существующие книги.
+
+    - **reader_id**: ID читателя
+    - **reader_data**: Новое полное состояние объекта (все обязательные поля должны быть переданы).
+
+     Возвращает объект с заменёнными данными, подтягивает его книги(mtm связь) и их авторов(Book.author 1tm связь)
+     """
     db_reader = await db_session.get(
         Reader,
         reader_id,
@@ -125,8 +185,28 @@ async def put_reader(reader_id: int, reader_data: ReaderInput, db_session: Async
     return reader_with_relations
 
 
-@router.patch("/{reader_id}", status_code=status.HTTP_200_OK, response_model=ReaderResponse)
-async def put_reader(reader_id: int, reader_data: ReaderUpdate, db_session: AsyncSession = Depends(get_db_session)):
+@router.patch(
+    "/{reader_id}",
+    status_code=status.HTTP_200_OK,
+    response_model=ReaderResponse,
+    summary="Частично обновить читателя по ID",
+    responses={
+        404: {"description": "Читатель с указанным ID не найден"}
+    }
+)
+async def patch_reader(reader_id: int, reader_data: ReaderUpdate, db_session: AsyncSession = Depends(get_db_session)):
+    """
+     Частично обновить данные читателя.
+
+     Принимает JSON-объект с данными читателя, валидирует их,
+     проверяет наличие указанных книг в БД,
+     добавляет только существующие книги.
+
+    - **reader_id**: ID читателя
+    - **reader_data**: Поля читателя, которые необходимо изменить.
+
+     Возвращает читателя, подтягивает его книги(mtm) и их авторов(Book.author 1tm)
+     """
     db_reader = await db_session.get(
         Reader,
         reader_id,
@@ -164,8 +244,19 @@ async def put_reader(reader_id: int, reader_data: ReaderUpdate, db_session: Asyn
     return reader_with_relations
 
 
-@router.delete("/{reader_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{reader_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить объект по ID",
+    responses={
+        404: {"description": "Читатель с указанным ID не найден"}
+        }
+    )
 async def delete_book(reader_id: int, db_session: AsyncSession = Depends(get_db_session)):
+    """
+    Удалить читателя по указанному ID
+    - **reader_id**: ID удаляемого читателя.
+    """
     db_reader = await db_session.get(Reader, reader_id)
     if db_reader is None:
         raise HTTPException(
