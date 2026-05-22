@@ -1,3 +1,4 @@
+from http.client import responses
 from typing import Optional
 from fastapi import APIRouter, status, Query, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,16 +9,29 @@ from database import get_db_session
 from schemas import BookInput, BookUpdate, BookResponse, BookResponseShort
 from models import Book, Author, Reader
 
-router = APIRouter(prefix='/books', tags=["Books"])
+router = APIRouter(prefix='/books', tags=["Книги"])
 
 
-@router.get("/", status_code=status.HTTP_200_OK, response_model=list[BookResponseShort])
+@router.get(
+    "/",
+    status_code=status.HTTP_200_OK,
+    response_model=list[BookResponseShort],
+    summary="Получить список книг с фильтрацией",
+    )
 async def get_books(
         author_name: Optional[str] = Query(None, description="Search by author name"),
         book_title: Optional[str] = Query(None, description="Search by book title"),
         db_session: AsyncSession = Depends(get_db_session)
 ):
+    """
+    Возвращает список книг с возможностью фильтрации,
+    подтягивает автора(one to many).
 
+    - **author_name**: поиск по имени автора (частичное совпадение)
+    - **book_title**: поиск по названию книги(частичное совпадение)
+
+
+    """
     query = select(Book)
     if author_name:
         query = query.join(Book.author).where(Author.full_name.ilike(f"%{author_name}%"))
@@ -32,8 +46,20 @@ async def get_books(
     return result.scalars().all()
 
 
-@router.get("/{book_id}", status_code=status.HTTP_200_OK, response_model=BookResponse)
+@router.get(
+    "/{book_id}",
+    status_code=status.HTTP_200_OK,
+    response_model=BookResponse,
+    summary="Получить книгу по ID",
+    responses={
+        404: {"description": "Книга с указанным ID не найдена"},
+    })
 async def get_book_detail(book_id: int, db_session: AsyncSession = Depends(get_db_session)):
+    """
+    Возвращает подробную информацию о книге по её уникальному ID,
+    подтягивает автора(one to many) и список читателей (many-to-many связь)
+    - **book_id**: ID книги
+    """
     db_book = await db_session.get(
         Book,
         book_id,
@@ -49,8 +75,27 @@ async def get_book_detail(book_id: int, db_session: AsyncSession = Depends(get_d
 
 
 
-@router.post("/", status_code=status.HTTP_201_CREATED, response_model=BookResponse)
+@router.post(
+    "/",
+    status_code=status.HTTP_201_CREATED,
+    response_model=BookResponse,
+    summary="Создать новую книгу",
+    responses={
+        404: {"description": "Автор с указанным ID не найден"}
+    }
+)
 async def create_book(book_data: BookInput, db_session: AsyncSession = Depends(get_db_session)):
+    """
+    Создание новой книги.
+    Принимает JSON-объект с данными книги, валидирует их,
+    проверяет наличие указанного автора в БД,
+    добавляет только существующих читателей
+
+    - **book_data**: Данные для создания книги(схема BookInput)
+
+    Возвращает объект созданной книги с присвоенным ID из БД,
+    подтягивает автора(one to many) и список читателей (many-to-many связь)
+    """
     db_author = await db_session.get(Author, book_data.author_id)
 
     if db_author is None:
@@ -87,11 +132,28 @@ async def create_book(book_data: BookInput, db_session: AsyncSession = Depends(g
     return book_with_relations
 
 
-
-
-
-@router.put(path="/{book_id}", status_code=status.HTTP_200_OK, response_model=BookResponse)
+@router.put(
+    "/{book_id}",
+    status_code=status.HTTP_200_OK,
+    response_model=BookResponse,
+    summary="Обновить\Заменить книгу по ID",
+    responses={
+        404: {"description": "Книга/Автор по указанному ID не найден."}
+    }
+)
 async def put_book(book_id: int, book_data: BookInput, db_session:AsyncSession = Depends(get_db_session)):
+    """
+    Полное обновление (замена) данных книги.
+
+    Принимает JSON-объект с данными книги, валидирует их,
+    проверяет наличие указанного автора в бд,
+    добавляет только существующих читателей.
+
+    - **book_id**: ID книги.
+    - **book_data**: Новое полное состояние объекта (все обязательные поля должны быть переданы).
+
+    Возвращает объект с заменёнными данными, подтягивает автора(one to many) и список читателей (many-to-many связь)
+    """
     db_book = await db_session.get(
         Book,
         book_id,
@@ -127,7 +189,6 @@ async def put_book(book_id: int, book_data: BookInput, db_session:AsyncSession =
         setattr(db_book, key, val)
 
     await db_session.commit()
-    #db_book.author = db_author
 
     result = await db_session.execute(
         select(Book)
@@ -140,8 +201,30 @@ async def put_book(book_id: int, book_data: BookInput, db_session:AsyncSession =
     return book_with_relations
 
 
-@router.patch(path="/{book_id}", status_code=status.HTTP_200_OK, response_model=BookResponse)
+@router.patch(
+    "/{book_id}",
+    status_code=status.HTTP_200_OK,
+    response_model=BookResponse,
+    summary="Частично обновить книгу по ID",
+    responses={
+        404: {"description": "Книга/Автор по указанному ID не найден."}
+    }
+)
 async def patch_book(book_id: int, book_data: BookUpdate, db_session:AsyncSession = Depends(get_db_session)):
+    """
+    Частично обновить данные книги.
+
+    Принимает JSON-объект с данными книги, валидирует их,
+    проверяет наличие автора в бд,
+    проверяет наличие указанных читателей в БД,
+    добавляет только существующих читателей.
+
+    - **book_id**: ID книг
+    - **book_data**: Поля книги, которые необходимо изменить.
+
+    Возвращает книгу, подтягивает её автора(1tm) и читателей(mtm)
+    """
+
     db_book = await db_session.get(
         Book,
         book_id,
@@ -190,8 +273,19 @@ async def patch_book(book_id: int, book_data: BookUpdate, db_session:AsyncSessio
 
 
 
-@router.delete("/{book_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{book_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary = "Частично обновить объект по ID",
+    responses={
+        404: {"description": "Книга с указанным ID не найдена"}
+    }
+    )
 async def delete_book(book_id: int, db_session: AsyncSession = Depends(get_db_session)):
+    """
+    Удалить книгу по указанному id
+    - **book_id**: ID удаляемой книги.
+    """
     db_book = await db_session.get(Book, book_id)
 
     if db_book is None:
