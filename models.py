@@ -51,3 +51,10 @@ class Reader(Base):
         secondary=book_reader_association,
         back_populates="readers")
     issue_date:Mapped[date] = mapped_column(nullable=False)
+
+
+class Admin(Base):
+    __tablename__ = 'admin'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(nullable=False)
+    hashed_pass: Mapped[str] = mapped_column(nullable=False)

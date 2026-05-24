@@ -1,4 +1,3 @@
-
 from typing import Optional
 from fastapi import APIRouter, status, Query, Depends, HTTPException
 from schemas import AuthorInput, AuthorUpdate, AuthorResponse
@@ -91,7 +90,7 @@ async def create_author(author_data: AuthorInput, db_session: AsyncSession = Dep
     "/{author_id}",
     status_code=status.HTTP_200_OK,
     response_model=AuthorResponse,
-    summary="Обновить\Заменить автора по ID",
+    summary="Обновить/Заменить автора по ID",
     responses={
         404: {"description": "Автор с указанным ID не найден"}
     })
@@ -161,7 +160,7 @@ async def patch_author(author_id: int, author_data: AuthorUpdate, db_session: As
 @router.delete(
     "/{author_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Удалить объект по указанному ID"
+    summary="Удалить автора по указанному ID"
 )
 async def delete_author(author_id: int, db_session: AsyncSession = Depends(get_db_session)):
     """

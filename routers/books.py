@@ -136,7 +136,7 @@ async def create_book(book_data: BookInput, db_session: AsyncSession = Depends(g
     "/{book_id}",
     status_code=status.HTTP_200_OK,
     response_model=BookResponse,
-    summary="Обновить\Заменить книгу по ID",
+    summary="Обновить/Заменить книгу по ID",
     responses={
         404: {"description": "Книга/Автор по указанному ID не найден."}
     }
@@ -276,7 +276,7 @@ async def patch_book(book_id: int, book_data: BookUpdate, db_session:AsyncSessio
 @router.delete(
     "/{book_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary = "Частично обновить объект по ID",
+    summary = "Удалить книгу по указанному ID",
     responses={
         404: {"description": "Книга с указанным ID не найдена"}
     }
