@@ -130,7 +130,7 @@ async def create_reader(reader_data: ReaderInput, db_session: AsyncSession = Dep
     "/{reader_id}",
     status_code=status.HTTP_200_OK,
     response_model=ReaderResponse,
-    summary="Обновить\Заменить читателя по ID",
+    summary="Обновить/Заменить читателя по ID",
     responses={
         404: {"description": "Читатель с указанным ID не найден"}
     })
@@ -247,7 +247,7 @@ async def patch_reader(reader_id: int, reader_data: ReaderUpdate, db_session: As
 @router.delete(
     "/{reader_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Удалить объект по ID",
+    summary="Удалить читателя по указанному ID",
     responses={
         404: {"description": "Читатель с указанным ID не найден"}
         }
