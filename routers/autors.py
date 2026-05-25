@@ -1,10 +1,14 @@
 from typing import Optional
+
 from fastapi import APIRouter, status, Query, Depends, HTTPException
-from schemas import AuthorInput, AuthorUpdate, AuthorResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from auth_utils import get_current_id_admin_stateless
 from database import get_db_session
 from models import Author
+from schemas import AuthorInput, AuthorUpdate, AuthorResponse
+
 
 
 router = APIRouter(prefix='/authors', tags=["Авторы"])
@@ -67,12 +71,17 @@ async def get_author_detail(author_id: int, db_session: AsyncSession = Depends(g
 "/",
     status_code=status.HTTP_201_CREATED,
     response_model=AuthorResponse,
-    summary="Создать нового автора"
+    summary="Создать нового автора",
+    responses={
+        401: {"description": "Требуется аутентификация"}
+    }
 )
-async def create_author(author_data: AuthorInput, db_session: AsyncSession = Depends(get_db_session)):
+async def create_author(
+        author_data: AuthorInput,
+        current_admin_id = Depends(get_current_id_admin_stateless),
+        db_session: AsyncSession = Depends(get_db_session)):
     """
-    Создание нового автора.
-
+    Создание нового автора. Требует аутентификации.
     Принимает JSON-объект с данными автора, валидирует их
 
     - **author_data**: Данные для создания автора
@@ -92,11 +101,17 @@ async def create_author(author_data: AuthorInput, db_session: AsyncSession = Dep
     response_model=AuthorResponse,
     summary="Обновить/Заменить автора по ID",
     responses={
+        401: {"description": "Требуется аутентификация"},
         404: {"description": "Автор с указанным ID не найден"}
-    })
-async def put_author(author_id: int, author_data: AuthorInput, db_session: AsyncSession = Depends(get_db_session)):
+    }
+)
+async def put_author(
+        author_id: int,
+        author_data: AuthorInput,
+        db_session: AsyncSession = Depends(get_db_session),
+        current_admin_id = Depends(get_current_id_admin_stateless)):
     """
-    Полное обновление (замена) данных автора.
+    Полное обновление (замена) данных автора. Требует аутентификации.
     Принимает JSON-объект с данными книги, валидирует их
 
     - **author_id**: ID автора.
@@ -128,11 +143,17 @@ async def put_author(author_id: int, author_data: AuthorInput, db_session: Async
     response_model=AuthorResponse,
     summary="Частично обновить объект по ID",
     responses={
+        401: {"description": "Требуется аутентификация"},
         404: {"description": "Автор с указанным ID не найден"}
     })
-async def patch_author(author_id: int, author_data: AuthorUpdate, db_session: AsyncSession = Depends(get_db_session)):
+async def patch_author(
+        author_id: int,
+        author_data: AuthorUpdate,
+        db_session: AsyncSession = Depends(get_db_session),
+        current_admin_id = Depends(get_current_id_admin_stateless)
+):
     """
-    Частичное обновление данных автора.
+    Частичное обновление данных автора. Требует аутентификации.
 
     Принимает JSON-объект с данными автора, валидирует их.
 
@@ -160,11 +181,19 @@ async def patch_author(author_id: int, author_data: AuthorUpdate, db_session: As
 @router.delete(
     "/{author_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Удалить автора по указанному ID"
+    summary="Удалить автора по указанному ID",
+    responses={
+        401: {"description": "Требуется аутентификация"},
+        404: {"description": "Автор с указанным ID не найден"}
+    }
 )
-async def delete_author(author_id: int, db_session: AsyncSession = Depends(get_db_session)):
+async def delete_author(
+        author_id: int,
+        db_session: AsyncSession = Depends(get_db_session),
+        current_admin_id = Depends(get_current_id_admin_stateless)
+):
     """
-    Удалить автора по указанному id
+    Удалить автора по указанному id. Требует аутентификации.
     - **author_id**: ID удаляемого автора.
     """
     db_author = await db_session.get(Author, author_id)
