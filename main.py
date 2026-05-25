@@ -1,6 +1,8 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from sqlalchemy import text
 
 from auth_utils import create_first_admin_if_not_exists
 from database import engine, init_db_local, drop_db, AsyncSessionLocal
@@ -9,9 +11,11 @@ from routers import autors, books, readers, admins, auth
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await init_db_local()
+    #await init_db_local()
+
     async with AsyncSessionLocal() as session:
         await create_first_admin_if_not_exists(session)
+        print("First admin created")
     yield
     await engine.dispose()
 
