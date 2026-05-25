@@ -1,13 +1,14 @@
-from http.client import responses
 from typing import Optional
+
 from fastapi import APIRouter, status, Query, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload, joinedload, contains_eager
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from auth_utils import get_current_id_admin_stateless
 from database import get_db_session
-from schemas import BookInput, BookUpdate, BookResponse, BookResponseShort
 from models import Book, Author, Reader
+from schemas import BookInput, BookUpdate, BookResponse, BookResponseShort
 
 router = APIRouter(prefix='/books', tags=["Книги"])
 
@@ -81,12 +82,17 @@ async def get_book_detail(book_id: int, db_session: AsyncSession = Depends(get_d
     response_model=BookResponse,
     summary="Создать новую книгу",
     responses={
-        404: {"description": "Автор с указанным ID не найден"}
+        401: {"description": "Требуется аутентификация"},
+        404: {"description": "Автор с указанным ID не найден"},
     }
 )
-async def create_book(book_data: BookInput, db_session: AsyncSession = Depends(get_db_session)):
+async def create_book(
+        book_data: BookInput,
+        db_session: AsyncSession = Depends(get_db_session),
+        current_admin_id = Depends(get_current_id_admin_stateless)
+):
     """
-    Создание новой книги.
+    Создание новой книги. Требует аутентификации.
     Принимает JSON-объект с данными книги, валидирует их,
     проверяет наличие указанного автора в БД,
     добавляет только существующих читателей
@@ -138,12 +144,18 @@ async def create_book(book_data: BookInput, db_session: AsyncSession = Depends(g
     response_model=BookResponse,
     summary="Обновить/Заменить книгу по ID",
     responses={
+        401: {"description": "Требуется аутентификация"},
         404: {"description": "Книга/Автор по указанному ID не найден."}
     }
 )
-async def put_book(book_id: int, book_data: BookInput, db_session:AsyncSession = Depends(get_db_session)):
+async def put_book(
+        book_id: int,
+        book_data: BookInput,
+        db_session:AsyncSession = Depends(get_db_session),
+        current_admin_id = Depends(get_current_id_admin_stateless)
+):
     """
-    Полное обновление (замена) данных книги.
+    Полное обновление (замена) данных книги. Требует аутентификации.
 
     Принимает JSON-объект с данными книги, валидирует их,
     проверяет наличие указанного автора в бд,
@@ -207,12 +219,18 @@ async def put_book(book_id: int, book_data: BookInput, db_session:AsyncSession =
     response_model=BookResponse,
     summary="Частично обновить книгу по ID",
     responses={
+        401: {"description": "Требуется аутентификация"},
         404: {"description": "Книга/Автор по указанному ID не найден."}
     }
 )
-async def patch_book(book_id: int, book_data: BookUpdate, db_session:AsyncSession = Depends(get_db_session)):
+async def patch_book(
+        book_id: int,
+        book_data: BookUpdate,
+        db_session:AsyncSession = Depends(get_db_session),
+        current_admin_id = Depends(get_current_id_admin_stateless)
+):
     """
-    Частично обновить данные книги.
+    Частично обновить данные книги. Требует аутентификации.
 
     Принимает JSON-объект с данными книги, валидирует их,
     проверяет наличие автора в бд,
@@ -278,12 +296,17 @@ async def patch_book(book_id: int, book_data: BookUpdate, db_session:AsyncSessio
     status_code=status.HTTP_204_NO_CONTENT,
     summary = "Удалить книгу по указанному ID",
     responses={
+        401: {"description": "Требуется аутентификация"},
         404: {"description": "Книга с указанным ID не найдена"}
     }
     )
-async def delete_book(book_id: int, db_session: AsyncSession = Depends(get_db_session)):
+async def delete_book(
+        book_id: int,
+        db_session: AsyncSession = Depends(get_db_session),
+        current_admin_id = Depends(get_current_id_admin_stateless)
+):
     """
-    Удалить книгу по указанному id
+    Удалить книгу по указанному id. Требует аутентификации.
     - **book_id**: ID удаляемой книги.
     """
     db_book = await db_session.get(Book, book_id)

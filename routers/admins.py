@@ -1,10 +1,12 @@
 from fastapi import APIRouter, status, HTTPException, Depends
+
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+
 from auth_utils import get_password_hash
 from database import get_db_session
-from schemas import AdminAuthSchema, AdminResponse, AdminChangePassword
 from models import Admin
+from schemas import AdminAuthSchema, AdminResponse, AdminChangePassword
 
 
 router = APIRouter(prefix="/admins", tags=['Администраторы'])
@@ -31,22 +33,33 @@ async def get_admins(db_session:AsyncSession = Depends(get_db_session)):
     "/",
     status_code=status.HTTP_201_CREATED,
     response_model=AdminResponse,
-    summary="Создать нового админа")
+    summary="Создать нового админа",
+    responses={
+        400: {"description": "Админ с таким именем уже существует"}
+    })
 async def post_admin(admin_data: AdminAuthSchema, db_session: AsyncSession = Depends(get_db_session)):
     """
     Создание нового админа.
-    Принимает JSON-объект с данными админа, валидирует их,
+    Принимает JSON-объект с данными админа, валидирует их, проверяет username на уникальность
     хеширует пароль и сохраняет в БД
 
     - **admin_data**: Данные для создания админа(схема AdminInput)
 
     Возвращает объект созданного админа с присвоенным ID из БД
     """
+    query = select(Admin).where(func.lower(Admin.username) == admin_data.username.lower())
+    result = await db_session.execute(query)
+    existing_admin = result.scalar_one_or_none()
+    if existing_admin:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Admin with this username already exists"
+        )
+
     hashed_pass = get_password_hash(admin_data.password)
 
     db_admin = Admin(username=admin_data.username, hashed_pass=hashed_pass)
     db_session.add(db_admin)
-    await db_session.commit()
     await db_session.refresh(db_admin)
 
     return db_admin

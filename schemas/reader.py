@@ -1,5 +1,7 @@
-from pydantic import BaseModel, Field, conint
 from datetime import date
+
+from pydantic import BaseModel, Field, conint
+
 
 
 class ReaderResponseShort(BaseModel):

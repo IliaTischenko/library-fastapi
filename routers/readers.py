@@ -1,13 +1,15 @@
 from datetime import date
 from typing import Optional
-from fastapi import APIRouter, status, Query, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload, joinedload, contains_eager
 
-from database import get_db_session
-from schemas import ReaderInput, ReaderUpdate, ReaderResponse
+from fastapi import APIRouter, status, Query, Depends, HTTPException
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload, joinedload, contains_eager
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from auth_utils import get_current_id_admin_stateless
+from database import get_db_session
 from models import Reader, Book
+from schemas import ReaderInput, ReaderUpdate, ReaderResponse
 
 
 router = APIRouter(prefix='/readers', tags=["Читатели"])
@@ -90,9 +92,18 @@ async def get_reader_detail(reader_id: int, db_session:AsyncSession = Depends(ge
     status_code=status.HTTP_201_CREATED,
     response_model=ReaderResponse,
     summary="Создать нового читателя",
+    responses={
+        401: {"description": "Требуется аутентификация"}
+    }
 )
-async def create_reader(reader_data: ReaderInput, db_session: AsyncSession = Depends(get_db_session)):
+async def create_reader(
+        reader_data: ReaderInput,
+        db_session: AsyncSession = Depends(get_db_session),
+        current_admin_id = Depends(get_current_id_admin_stateless)
+):
     """
+    Создание нового читателя. Требует аутентификации.
+
     Принимает JSON-объект с данными читателя, валидирует их
     проверяет наличие указанных книг в БД,
     добавляет только существующие книги.
@@ -132,11 +143,17 @@ async def create_reader(reader_data: ReaderInput, db_session: AsyncSession = Dep
     response_model=ReaderResponse,
     summary="Обновить/Заменить читателя по ID",
     responses={
+        401: {"description": "Требуется аутентификация"},
         404: {"description": "Читатель с указанным ID не найден"}
     })
-async def put_reader(reader_id: int, reader_data: ReaderInput, db_session: AsyncSession = Depends(get_db_session)):
+async def put_reader(
+        reader_id: int,
+        reader_data: ReaderInput,
+        db_session: AsyncSession = Depends(get_db_session),
+        current_admin_id = Depends(get_current_id_admin_stateless)
+):
     """
-    Полное обновление (замена) данных читателя.
+    Полное обновление (замена) данных читателя. Требует аутентификации
 
     Принимает JSON-объект с данными читателя, валидирует их,
     проверяет наличие указанных книг в БД,
@@ -191,12 +208,18 @@ async def put_reader(reader_id: int, reader_data: ReaderInput, db_session: Async
     response_model=ReaderResponse,
     summary="Частично обновить читателя по ID",
     responses={
+        401: {"description": "Требуется аутентификация"},
         404: {"description": "Читатель с указанным ID не найден"}
     }
 )
-async def patch_reader(reader_id: int, reader_data: ReaderUpdate, db_session: AsyncSession = Depends(get_db_session)):
+async def patch_reader(
+        reader_id: int,
+        reader_data: ReaderUpdate,
+        db_session: AsyncSession = Depends(get_db_session),
+        current_admin_id = Depends(get_current_id_admin_stateless)
+):
     """
-     Частично обновить данные читателя.
+     Частично обновить данные читателя. Требует аутентификации.
 
      Принимает JSON-объект с данными читателя, валидирует их,
      проверяет наличие указанных книг в БД,
@@ -249,12 +272,17 @@ async def patch_reader(reader_id: int, reader_data: ReaderUpdate, db_session: As
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Удалить читателя по указанному ID",
     responses={
+        401: {"description": "Требуется аутентификация"},
         404: {"description": "Читатель с указанным ID не найден"}
         }
     )
-async def delete_book(reader_id: int, db_session: AsyncSession = Depends(get_db_session)):
+async def delete_book(
+        reader_id: int,
+        db_session: AsyncSession = Depends(get_db_session),
+        current_admin_id = Depends(get_current_id_admin_stateless)
+):
     """
-    Удалить читателя по указанному ID
+    Удалить читателя по указанному ID. Требует аутентификации.
     - **reader_id**: ID удаляемого читателя.
     """
     db_reader = await db_session.get(Reader, reader_id)
