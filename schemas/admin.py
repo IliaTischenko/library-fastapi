@@ -12,7 +12,7 @@ class AdminAuthSchema(BaseModel):
                           min_length=8,
                           max_length=64,
                           description="Пароль",
-                          examples=['secret_password_12345678']
+                          examples=['12345678']
                           )
 
 

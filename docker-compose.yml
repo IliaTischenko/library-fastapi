@@ -2,7 +2,6 @@ services:
   db:
     image: postgres:15-alpine
     container_name: fastapi_library_db
-    restart: always
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
@@ -10,7 +9,23 @@ services:
     ports:
     - "5432:5432"
     volumes:
-    - postgres_data:/home/tejubusion/PycharmProjects/library-fastapi/postgres_data
+    - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 3s  # Опрашивать базу каждые 3 секунды
+      timeout: 5s   # Ждать ответа не больше 5 секунд
+      retries: 5
 
+  app:
+    build: .
+    container_name: fastapi_library_app
+    ports:
+    - "8000:8000"
+    command: sh -c "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000"
+    env_file:
+    - .env
+    depends_on:
+      db:
+        condition: service_healthy
 volumes:
   postgres_data:
