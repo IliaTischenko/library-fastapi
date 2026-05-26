@@ -6,7 +6,7 @@ from sqlalchemy import text
 
 from auth_utils import create_first_admin_if_not_exists
 from database import engine, init_db_local, drop_db, AsyncSessionLocal
-from routers import autors, books, readers, admins, auth
+from routers import autors, books, readers, users, auth
 
 
 @asynccontextmanager

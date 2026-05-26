@@ -87,55 +87,6 @@ async def get_reader_detail(reader_id: int, db_session:AsyncSession = Depends(ge
     return db_reader
 
 
-@router.post(
-    "/",
-    status_code=status.HTTP_201_CREATED,
-    response_model=ReaderResponse,
-    summary="Создать нового читателя",
-    responses={
-        401: {"description": "Требуется аутентификация"}
-    }
-)
-async def create_reader(
-        reader_data: ReaderInput,
-        db_session: AsyncSession = Depends(get_db_session),
-        current_admin_id = Depends(get_current_id_admin_stateless)
-):
-    """
-    Создание нового читателя. Требует аутентификации.
-
-    Принимает JSON-объект с данными читателя, валидирует их
-    проверяет наличие указанных книг в БД,
-    добавляет только существующие книги.
-
-    - **reader_data**: Данные для создания читателя(схема ReaderInput)
-
-    Возвращает объект созданного читателя с присвоенным ID из БД,
-     подтягивает его книги(mtm связь) и их авторов(Book.author 1tm связь)
-    """
-
-    data_dict = reader_data.model_dump()
-    books_ids = data_dict.pop("books_ids", [])
-    new_reader = Reader(**data_dict)
-
-    if books_ids:
-        query = select(Book).where(Book.id.in_(books_ids))
-        result = await db_session.execute(query)
-        books = result.scalars().all()
-        new_reader.books = books
-
-    db_session.add(new_reader)
-    await db_session.commit()
-
-    result = await db_session.execute(
-        select(Reader)
-        .options(selectinload(Reader.books).joinedload(Book.author))
-        .where(Reader.id == new_reader.id)
-    )
-    reader_with_relations = result.scalar_one()
-
-    return reader_with_relations
-
 
 @router.put(
     "/{reader_id}",
