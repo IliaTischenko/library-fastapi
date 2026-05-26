@@ -1,3 +1,5 @@
+from typing import Any
+
 from fastapi import APIRouter, Response, status, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,15 +35,15 @@ async def login(
     """
     query = select(User).where(User.username == login_data.username)
     result = await db_session.execute(query)
-    db_admin = result.scalar_one_or_none()
+    db_user = result.scalar_one_or_none()
 
-    if db_admin is None or not verify_password(login_data.password, db_admin.hashed_pass):
+    if db_user is None or not verify_password(login_data.password, db_user.hashed_pass):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Wrong username or password"
         )
 
-    token = create_access_token(db_admin.id)
+    token = create_access_token(user_id=db_user.id, role=db_user.role)
     response.set_cookie(
         key="access_token",
         value=token,
@@ -62,7 +64,7 @@ async def login(
         401: {"description": "токен отсутствует или просрочен"}
     }
 )
-async def logout(response: Response, current_user_payload = Depends(get_current_user_stateless)):
+async def logout(response: Response, payloads: dict[str, Any] = Depends(get_current_user_stateless)):
     """
     Выход из системы.
     Удаляет токен из куки.

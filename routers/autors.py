@@ -1,12 +1,12 @@
-from typing import Optional
+from typing import Optional, Any
 
 from fastapi import APIRouter, status, Query, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth_utils import get_current_id_admin_stateless
+from auth_utils import get_current_user_stateless
 from database import get_db_session
-from models import Author
+from models import Author, UserRole
 from schemas import AuthorInput, AuthorUpdate, AuthorResponse
 
 
@@ -73,21 +73,28 @@ async def get_author_detail(author_id: int, db_session: AsyncSession = Depends(g
     response_model=AuthorResponse,
     summary="Создать нового автора",
     responses={
-        401: {"description": "Требуется аутентификация"}
+        401: {"description": "Требуется аутентификация"},
+        403: {"description": "Недостаточно прав"}
     }
 )
 async def create_author(
         author_data: AuthorInput,
-        current_admin_id = Depends(get_current_id_admin_stateless),
+        payloads: dict[str, Any] = Depends(get_current_user_stateless),
         db_session: AsyncSession = Depends(get_db_session)):
     """
-    Создание нового автора. Требует аутентификации.
+    Создание нового автора. Требует аутентификации (Только администратор)
     Принимает JSON-объект с данными автора, валидирует их
 
     - **author_data**: Данные для создания автора
 
     Возвращает объект созданного автора с присвоенным ID из БД.
     """
+    if payloads['role'] != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have sufficient rights to perform this action."
+        )
+
     new_author = Author(**author_data.model_dump())
     db_session.add(new_author)
     await db_session.commit()
@@ -102,6 +109,7 @@ async def create_author(
     summary="Обновить/Заменить автора по ID",
     responses={
         401: {"description": "Требуется аутентификация"},
+        403: {"description": "Недостаточно прав"},
         404: {"description": "Автор с указанным ID не найден"}
     }
 )
@@ -109,9 +117,9 @@ async def put_author(
         author_id: int,
         author_data: AuthorInput,
         db_session: AsyncSession = Depends(get_db_session),
-        current_admin_id = Depends(get_current_id_admin_stateless)):
+        payloads: dict[str, Any] = Depends(get_current_user_stateless)):
     """
-    Полное обновление (замена) данных автора. Требует аутентификации.
+    Полное обновление (замена) данных автора. Требует аутентификации. (Только администратор)
     Принимает JSON-объект с данными книги, валидирует их
 
     - **author_id**: ID автора.
@@ -119,6 +127,13 @@ async def put_author(
 
     Возвращает объект с заменёнными данными
     """
+    if payloads['role'] != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have sufficient rights to perform this action."
+        )
+
+
     db_author = await db_session.get(Author, author_id)
 
     if db_author is None:
@@ -144,16 +159,17 @@ async def put_author(
     summary="Частично обновить объект по ID",
     responses={
         401: {"description": "Требуется аутентификация"},
+        403: {"description": "Недостаточно прав"},
         404: {"description": "Автор с указанным ID не найден"}
     })
 async def patch_author(
         author_id: int,
         author_data: AuthorUpdate,
         db_session: AsyncSession = Depends(get_db_session),
-        current_admin_id = Depends(get_current_id_admin_stateless)
+        payloads: dict[str, Any] = Depends(get_current_user_stateless)
 ):
     """
-    Частичное обновление данных автора. Требует аутентификации.
+    Частичное обновление данных автора. Требует аутентификации. (Только администратор)
 
     Принимает JSON-объект с данными автора, валидирует их.
 
@@ -162,6 +178,13 @@ async def patch_author(
 
     Возвращает объект созданного автора
     """
+    if payloads['role'] != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have sufficient rights to perform this action."
+        )
+
+
     db_author = await db_session.get(Author, author_id)
 
     if db_author is None:
@@ -184,18 +207,27 @@ async def patch_author(
     summary="Удалить автора по указанному ID",
     responses={
         401: {"description": "Требуется аутентификация"},
+        403: {"description": "Недостаточно прав"},
         404: {"description": "Автор с указанным ID не найден"}
     }
 )
 async def delete_author(
         author_id: int,
         db_session: AsyncSession = Depends(get_db_session),
-        current_admin_id = Depends(get_current_id_admin_stateless)
+        payloads: dict[str, Any] = Depends(get_current_user_stateless)
 ):
     """
-    Удалить автора по указанному id. Требует аутентификации.
+    Удалить автора по указанному id. Требует аутентификации. (Только администратор)
     - **author_id**: ID удаляемого автора.
     """
+    if payloads['role'] != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have sufficient rights to perform this action."
+        )
+
+
+
     db_author = await db_session.get(Author, author_id)
 
     if db_author is None:

@@ -7,7 +7,7 @@ from fastapi import Cookie, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models import Admin
+from models import User, UserRole
 
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "12345678")
 ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
@@ -34,7 +34,10 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 async def create_first_admin_if_not_exists(db_session: AsyncSession) -> None:
-    query = select(Admin)
+    """
+    Создаёт первого админа в бд если его нет, credentials в .env
+    """
+    query = select(User).where(User.role == UserRole.ADMIN)
     result = await db_session.execute(query)
     existing_admin = result.scalars().first()
 
@@ -42,12 +45,12 @@ async def create_first_admin_if_not_exists(db_session: AsyncSession) -> None:
         default_username = os.getenv("FIRST_ADMIN")
         default_password = os.getenv("FIRST_ADMIN_PASSWORD")
         hashed_password = get_password_hash(default_password)
-        first_admin = Admin(username=default_username, hashed_pass=hashed_password)
+        first_admin = User(username=default_username, hashed_pass=hashed_password, role=UserRole.ADMIN)
         db_session.add(first_admin)
         await db_session.commit()
 
 
-def create_access_token(user_id: int) -> str:
+def create_access_token(user_id: int, role: str) -> str:
     """
     Генерирует Stateless JWT-токен на 1 день.
     """
@@ -56,6 +59,7 @@ def create_access_token(user_id: int) -> str:
 
     payload = {
         "sub": str(user_id),
+        "role": role,
         "exp": expire
     }
 
@@ -64,7 +68,7 @@ def create_access_token(user_id: int) -> str:
     return encoded_jwt
 
 
-def get_current_id_admin_stateless(access_token: str | None = Cookie(default=None)) -> int:
+def get_current_user_stateless(access_token: str | None = Cookie(default=None)) -> dict:
     """
     Проверяет JWT-токен, который пришёл в куках
     - **access_token** - строка токена
@@ -82,4 +86,8 @@ def get_current_id_admin_stateless(access_token: str | None = Cookie(default=Non
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")
 
-    return int(payload["sub"])
+    current_user = {
+        "id":  int(payload["sub"]),
+        "role": payload["role"]
+    }
+    return current_user

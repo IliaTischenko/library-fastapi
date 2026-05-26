@@ -60,8 +60,8 @@ class Reader(Base):
         back_populates="readers")
     register_date: Mapped[date] = mapped_column(nullable=False)
 
-    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("user.id"), nullable=False, unique=True)
-    user: Mapped[Optional["User"]] = relationship("User", back_populates="reader")
+    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=False, unique=True)
+    user: Mapped[Optional["User"]] = relationship("User")
 
 
 class User(Base):

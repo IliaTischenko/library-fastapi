@@ -4,7 +4,7 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth_utils import get_password_hash, verify_password
+from auth_utils import get_password_hash, verify_password, get_current_user_stateless
 from database import get_db_session
 from models import User, UserRole, Reader, Book
 from schemas import UserAuthSchema, UserResponse, UserChangePassword, UserReaderInput, ReaderResponse
@@ -18,11 +18,21 @@ router = APIRouter(prefix="/users", tags=['Пользователи'])
     response_model=list[UserResponse],
     summary="Получить список пользователей"
 )
-async def get_users(db_session:AsyncSession = Depends(get_db_session)):
+async def get_users(
+        db_session:AsyncSession = Depends(get_db_session),
+        payloads: dict = Depends(get_current_user_stateless)):
     """
-    Возвращает список пользователей, без пароля.
+    Возвращает список пользователей
     Защищенный, только администраторы
     """
+    if payloads['role'] != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have sufficient rights to perform this action."
+        )
+
+
+
     query = select(User)
     result = await db_session.execute(query)
     users = result.scalars().all()
@@ -60,8 +70,10 @@ async def create_admin(user_data: UserAuthSchema, db_session: AsyncSession = Dep
 
     hashed_pass = get_password_hash(user_data.password)
 
-    db_admin = User(username=user_data.username, hashed_pass=hashed_pass, reader=None, role=UserRole.ADMIN)
+    db_admin = User(username=user_data.username, hashed_pass=hashed_pass, role=UserRole.ADMIN)
     db_session.add(db_admin)
+
+    await db_session.commit()
     await db_session.refresh(db_admin)
 
     return db_admin
@@ -72,11 +84,13 @@ async def create_admin(user_data: UserAuthSchema, db_session: AsyncSession = Dep
     status_code=status.HTTP_201_CREATED,
     response_model=ReaderResponse,
     summary="Регистрация нового читателя",
+    responses={
+        400: {"description": "Юзер с таким username уже существует"}
+    }
 )
 async def create_reader(
         reader_data: UserReaderInput,
-        db_session: AsyncSession = Depends(get_db_session),
-        current_admin_id = Depends(get_current_user_stateless)
+        db_session: AsyncSession = Depends(get_db_session)
 ):
     """
     Создание нового читателя.
@@ -97,18 +111,20 @@ async def create_reader(
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Admin with this username already exists"
+            detail="User with this username already exists"
         )
 
     hashed_pass = get_password_hash(reader_data.password)
 
-    db_user = User(username=reader_data.username, hashed_pass=hashed_pass, reader=None, role=UserRole.READER)
+    db_user = User(username=reader_data.username, hashed_pass=hashed_pass, role=UserRole.READER)
     db_session.add(db_user)
+
+    await db_session.commit()
     await db_session.refresh(db_user)
 
 
 
-    data_dict = reader_data.model_dump()
+    data_dict = reader_data.model_dump(exclude={"username", "password"})
     books_ids = data_dict.pop("books_ids", [])
     new_reader = Reader(**data_dict)
 
@@ -141,28 +157,28 @@ async def create_reader(
     "/{admin_id}",
     status_code=status.HTTP_200_OK,
     response_model=UserResponse,
-    summary="Смена пароля админу по указанному ID",
+    summary="Смена пароля текущему юзеру",
     responses={
-        401: {"description": "Неверный старый пароль"},
-        404: {"description": "Админ с указанным ID не найден"}
+        401: {"description": "Неверный старый пароль"}
     }
 )
-async def change_pass_admin(
+async def change_pass(
         user_id: int,
         user_data: UserChangePassword,
         db_session: AsyncSession = Depends(get_db_session),
+        payloads: dict = Depends(get_current_user_stateless)
 ):
     """
     Принимает JSON-объект с новым паролем, хеширует его и заменяет.
-    - **admin_data**: Данные для изменения админа(схема AdminChangePassword)
-    Возвращает объект админа без пароля.
+    - **admin_data**: Данные для изменения пароля (схема UserChangePassword)
+    Возвращает объект юзера.
 
     """
-    existing_user = await db_session.get(User, user_id)
+    existing_user = await db_session.get(User, payloads["id"])
     if existing_user is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Admin with tis ID not found"
+            detail="User with tis ID not found"
         )
 
     current_hash = str(existing_user.hashed_pass)
@@ -182,22 +198,22 @@ async def change_pass_admin(
 
 
 @router.delete(
-    "/{admin_id}",
+    "/{user_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Удалить объект по указанному ID",
+    summary="Удалить юзера по указанному ID",
     responses={
-        404: {"description": "Админ с указанным ID не найден"}
+        404: {"description": "Юзер с указанным ID не найден"}
     })
 async def delete_admin(user_id: int, db_session: AsyncSession = Depends(get_db_session)):
     """
-    Удалить юзера по указанному id, защищенный(только Администратор)
+    Удалить юзера по указанному id, защищенный (только Администратор)
     - **user_id**: ID пользователя
     """
     db_user = await db_session.get(User, user_id)
     if db_user is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Admin with tis ID not found"
+            detail="User with tis ID not found"
         )
 
     await db_session.delete(db_user)

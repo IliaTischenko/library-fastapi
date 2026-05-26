@@ -1,13 +1,13 @@
-from typing import Optional
+from typing import Optional, Any
 
 from fastapi import APIRouter, status, Query, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload, joinedload, contains_eager
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth_utils import get_current_id_admin_stateless
+from auth_utils import get_current_user_stateless
 from database import get_db_session
-from models import Book, Author, Reader
+from models import Book, Author, Reader, UserRole
 from schemas import BookInput, BookUpdate, BookResponse, BookResponseShort
 
 router = APIRouter(prefix='/books', tags=["Книги"])
@@ -83,16 +83,17 @@ async def get_book_detail(book_id: int, db_session: AsyncSession = Depends(get_d
     summary="Создать новую книгу",
     responses={
         401: {"description": "Требуется аутентификация"},
+        403: {"description": "Недостаточно прав"},
         404: {"description": "Автор с указанным ID не найден"},
     }
 )
 async def create_book(
         book_data: BookInput,
         db_session: AsyncSession = Depends(get_db_session),
-        current_admin_id = Depends(get_current_id_admin_stateless)
+        payloads: dict[str, Any] = Depends(get_current_user_stateless)
 ):
     """
-    Создание новой книги. Требует аутентификации.
+    Создание новой книги. Требует аутентификации (Только администратор).
     Принимает JSON-объект с данными книги, валидирует их,
     проверяет наличие указанного автора в БД,
     добавляет только существующих читателей
@@ -102,6 +103,12 @@ async def create_book(
     Возвращает объект созданной книги с присвоенным ID из БД,
     подтягивает автора(one to many) и список читателей (many-to-many связь)
     """
+    if payloads['role'] != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have sufficient rights to perform this action."
+        )
+
     db_author = await db_session.get(Author, book_data.author_id)
 
     if db_author is None:
@@ -145,6 +152,7 @@ async def create_book(
     summary="Обновить/Заменить книгу по ID",
     responses={
         401: {"description": "Требуется аутентификация"},
+        403: {"description": "Недостаточно прав"},
         404: {"description": "Книга/Автор по указанному ID не найден."}
     }
 )
@@ -152,10 +160,10 @@ async def put_book(
         book_id: int,
         book_data: BookInput,
         db_session:AsyncSession = Depends(get_db_session),
-        current_admin_id = Depends(get_current_id_admin_stateless)
+        payloads: dict[str, Any] = Depends(get_current_user_stateless)
 ):
     """
-    Полное обновление (замена) данных книги. Требует аутентификации.
+    Полное обновление (замена) данных книги. Требует аутентификации (Только администратор).
 
     Принимает JSON-объект с данными книги, валидирует их,
     проверяет наличие указанного автора в бд,
@@ -166,6 +174,12 @@ async def put_book(
 
     Возвращает объект с заменёнными данными, подтягивает автора(one to many) и список читателей (many-to-many связь)
     """
+    if payloads['role'] != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have sufficient rights to perform this action."
+        )
+
     db_book = await db_session.get(
         Book,
         book_id,
@@ -220,6 +234,7 @@ async def put_book(
     summary="Частично обновить книгу по ID",
     responses={
         401: {"description": "Требуется аутентификация"},
+        403: {"description": "Недостаточно прав"},
         404: {"description": "Книга/Автор по указанному ID не найден."}
     }
 )
@@ -227,10 +242,10 @@ async def patch_book(
         book_id: int,
         book_data: BookUpdate,
         db_session:AsyncSession = Depends(get_db_session),
-        current_admin_id = Depends(get_current_id_admin_stateless)
+        payloads: dict[str, Any] = Depends(get_current_user_stateless)
 ):
     """
-    Частично обновить данные книги. Требует аутентификации.
+    Частично обновить данные книги. Требует аутентификации (Только администратор)
 
     Принимает JSON-объект с данными книги, валидирует их,
     проверяет наличие автора в бд,
@@ -242,6 +257,12 @@ async def patch_book(
 
     Возвращает книгу, подтягивает её автора(1tm) и читателей(mtm)
     """
+    if payloads['role'] != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have sufficient rights to perform this action."
+        )
+
 
     db_book = await db_session.get(
         Book,
@@ -297,18 +318,25 @@ async def patch_book(
     summary = "Удалить книгу по указанному ID",
     responses={
         401: {"description": "Требуется аутентификация"},
+        403: {"description": "Недостаточно прав"},
         404: {"description": "Книга с указанным ID не найдена"}
     }
     )
 async def delete_book(
         book_id: int,
         db_session: AsyncSession = Depends(get_db_session),
-        current_admin_id = Depends(get_current_id_admin_stateless)
+        payloads: dict[str, Any] = Depends(get_current_user_stateless)
 ):
     """
-    Удалить книгу по указанному id. Требует аутентификации.
+    Удалить книгу по указанному id. Требует аутентификации (Только администратор).
     - **book_id**: ID удаляемой книги.
     """
+    if payloads['role'] != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have sufficient rights to perform this action."
+        )
+
     db_book = await db_session.get(Book, book_id)
 
     if db_book is None:

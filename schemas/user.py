@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from schemas import ReaderInput
+
 
 class UserAuthSchema(BaseModel):
     username: str = Field(...,
@@ -35,6 +35,4 @@ class UserChangePassword(BaseModel):
 class UserResponse(BaseModel):
     id: int
     username: str
-
-class UserReaderInput(UserAuthSchema, ReaderInput):
-    pass
+    role: str
