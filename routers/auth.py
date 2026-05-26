@@ -1,11 +1,13 @@
+from typing import Any
+
 from fastapi import APIRouter, Response, status, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth_utils import verify_password, create_access_token, get_current_id_admin_stateless
+from auth_utils import verify_password, create_access_token, get_current_user_stateless
 from database import get_db_session
-from models import Admin
-from schemas import AdminAuthSchema
+from models import User
+from schemas import UserAuthSchema
 
 
 
@@ -13,15 +15,15 @@ router = APIRouter(prefix="/auth", tags=['Authentication'])
 
 
 @router.post(
-    "/",
+    "/login",
     status_code=status.HTTP_200_OK,
-    summary="Вход в систему для администрирования",
+    summary="Вход в систему",
     responses={
         401: {"description": "Неверное имя пользователя или пароль"}
     }
 )
 async def login(
-        login_data: AdminAuthSchema,
+        login_data: UserAuthSchema,
         response: Response,
         db_session: AsyncSession = Depends(get_db_session)
 ):
@@ -31,17 +33,17 @@ async def login(
     установка куки авторизации для доступа к защищённым роутам.
     - **login_data**: Данные для входа (логин, пароль)
     """
-    query = select(Admin).where(Admin.username == login_data.username)
+    query = select(User).where(User.username == login_data.username)
     result = await db_session.execute(query)
-    db_admin = result.scalar_one_or_none()
+    db_user = result.scalar_one_or_none()
 
-    if db_admin is None or not verify_password(login_data.password, db_admin.hashed_pass):
+    if db_user is None or not verify_password(login_data.password, db_user.hashed_pass):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Wrong username or password"
         )
 
-    token = create_access_token(db_admin.id)
+    token = create_access_token(user_id=db_user.id, role=db_user.role)
     response.set_cookie(
         key="access_token",
         value=token,
@@ -62,9 +64,9 @@ async def login(
         401: {"description": "токен отсутствует или просрочен"}
     }
 )
-async def logout(response: Response, current_admin_id = Depends(get_current_id_admin_stateless)):
+async def logout(response: Response, payloads: dict[str, Any] = Depends(get_current_user_stateless)):
     """
-    Разлогинивает администратора.
+    Выход из системы.
     Удаляет токен из куки.
         """
     response.delete_cookie(key="access_token")

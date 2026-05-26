@@ -1,9 +1,16 @@
 from datetime import date
+import enum
+from typing import Optional
 
-from sqlalchemy import Column, Integer, Table, ForeignKey
+from sqlalchemy import Column, Integer, Table, ForeignKey, Enum
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 
 from database import Base
+
+
+class UserRole(str, enum.Enum):
+    READER = "reader"
+    ADMIN = "admin"
 
 
 book_reader_association = Table(
@@ -51,11 +58,19 @@ class Reader(Base):
         "Book",
         secondary=book_reader_association,
         back_populates="readers")
-    issue_date:Mapped[date] = mapped_column(nullable=False)
+    register_date: Mapped[date] = mapped_column(nullable=False)
+
+    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=False, unique=True)
+    user: Mapped[Optional["User"]] = relationship("User")
 
 
-class Admin(Base):
-    __tablename__ = 'admin'
+class User(Base):
+    __tablename__ = 'users'
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(nullable=False, unique=True, index=True)
     hashed_pass: Mapped[str] = mapped_column(nullable=False)
+    role: Mapped[UserRole] = mapped_column(
+        Enum(UserRole, native_enum=False),
+        default=UserRole.READER,
+        nullable=False
+    )

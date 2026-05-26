@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 
 
-class AdminAuthSchema(BaseModel):
+class UserAuthSchema(BaseModel):
     username: str = Field(...,
                           min_length=5,
                           max_length=24,
@@ -16,8 +16,14 @@ class AdminAuthSchema(BaseModel):
                           )
 
 
-class AdminChangePassword(BaseModel):
-    password: str = Field(...,
+class UserChangePassword(BaseModel):
+    old_password: str = Field(...,
+                          min_length=8,
+                          max_length=64,
+                          description="Старый пароль",
+                          examples=['old_secret_password_12345678']
+                          )
+    new_password: str = Field(...,
                           min_length=8,
                           max_length=64,
                           description="Новый пароль",
@@ -25,6 +31,8 @@ class AdminChangePassword(BaseModel):
                           )
 
 
-class AdminResponse(BaseModel):
+
+class UserResponse(BaseModel):
     id: int
     username: str
+    role: str

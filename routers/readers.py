@@ -1,14 +1,14 @@
 from datetime import date
-from typing import Optional
+from typing import Optional, Any
 
 from fastapi import APIRouter, status, Query, Depends, HTTPException
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload, joinedload, contains_eager
+from sqlalchemy.orm import selectinload, joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth_utils import get_current_id_admin_stateless
+from auth_utils import get_current_user_stateless
 from database import get_db_session
-from models import Reader, Book
+from models import Reader, Book, UserRole
 from schemas import ReaderInput, ReaderUpdate, ReaderResponse
 
 
@@ -87,56 +87,8 @@ async def get_reader_detail(reader_id: int, db_session:AsyncSession = Depends(ge
     return db_reader
 
 
-@router.post(
-    "/",
-    status_code=status.HTTP_201_CREATED,
-    response_model=ReaderResponse,
-    summary="Создать нового читателя",
-    responses={
-        401: {"description": "Требуется аутентификация"}
-    }
-)
-async def create_reader(
-        reader_data: ReaderInput,
-        db_session: AsyncSession = Depends(get_db_session),
-        current_admin_id = Depends(get_current_id_admin_stateless)
-):
-    """
-    Создание нового читателя. Требует аутентификации.
-
-    Принимает JSON-объект с данными читателя, валидирует их
-    проверяет наличие указанных книг в БД,
-    добавляет только существующие книги.
-
-    - **reader_data**: Данные для создания читателя(схема ReaderInput)
-
-    Возвращает объект созданного читателя с присвоенным ID из БД,
-     подтягивает его книги(mtm связь) и их авторов(Book.author 1tm связь)
-    """
-
-    data_dict = reader_data.model_dump()
-    books_ids = data_dict.pop("books_ids", [])
-    new_reader = Reader(**data_dict)
-
-    if books_ids:
-        query = select(Book).where(Book.id.in_(books_ids))
-        result = await db_session.execute(query)
-        books = result.scalars().all()
-        new_reader.books = books
-
-    db_session.add(new_reader)
-    await db_session.commit()
-
-    result = await db_session.execute(
-        select(Reader)
-        .options(selectinload(Reader.books).joinedload(Book.author))
-        .where(Reader.id == new_reader.id)
-    )
-    reader_with_relations = result.scalar_one()
-
-    return reader_with_relations
-
-
+    #админ всё может
+    #читатель только если id_reader и payloads["id"] совпадают
 @router.put(
     "/{reader_id}",
     status_code=status.HTTP_200_OK,
@@ -144,16 +96,17 @@ async def create_reader(
     summary="Обновить/Заменить читателя по ID",
     responses={
         401: {"description": "Требуется аутентификация"},
+        403: {"description": "Недостаточно прав"},
         404: {"description": "Читатель с указанным ID не найден"}
     })
 async def put_reader(
         reader_id: int,
         reader_data: ReaderInput,
         db_session: AsyncSession = Depends(get_db_session),
-        current_admin_id = Depends(get_current_id_admin_stateless)
+        payloads: dict[str, Any] = Depends(get_current_user_stateless)
 ):
     """
-    Полное обновление (замена) данных читателя. Требует аутентификации
+    Полное обновление (замена) данных читателя. Требует аутентификации (Только Администратор).
 
     Принимает JSON-объект с данными читателя, валидирует их,
     проверяет наличие указанных книг в БД,
@@ -164,6 +117,12 @@ async def put_reader(
 
      Возвращает объект с заменёнными данными, подтягивает его книги(mtm связь) и их авторов(Book.author 1tm связь)
      """
+    if payloads['role'] != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have sufficient rights to perform this action."
+        )
+
     db_reader = await db_session.get(
         Reader,
         reader_id,
@@ -209,6 +168,7 @@ async def put_reader(
     summary="Частично обновить читателя по ID",
     responses={
         401: {"description": "Требуется аутентификация"},
+        403: {"description": "Недостаточно прав"},
         404: {"description": "Читатель с указанным ID не найден"}
     }
 )
@@ -216,10 +176,10 @@ async def patch_reader(
         reader_id: int,
         reader_data: ReaderUpdate,
         db_session: AsyncSession = Depends(get_db_session),
-        current_admin_id = Depends(get_current_id_admin_stateless)
+        payloads: dict[str, Any] = Depends(get_current_user_stateless)
 ):
     """
-     Частично обновить данные читателя. Требует аутентификации.
+     Частично обновить данные читателя. Требует аутентификации (Только администратор)
 
      Принимает JSON-объект с данными читателя, валидирует их,
      проверяет наличие указанных книг в БД,
@@ -230,6 +190,16 @@ async def patch_reader(
 
      Возвращает читателя, подтягивает его книги(mtm) и их авторов(Book.author 1tm)
      """
+
+    #админ всё может
+    #читатель только если id_reader и payloads["id"] совпадают
+
+    if payloads['role'] != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have sufficient rights to perform this action."
+        )
+
     db_reader = await db_session.get(
         Reader,
         reader_id,
@@ -267,24 +237,46 @@ async def patch_reader(
     return reader_with_relations
 
 
+@router.post("/readers/{reader_id}/books/{book_id}")
+async def add_book_to_reader(reader_id: int, book_id: int):
+    #админ всё может
+    #читатель только если id_reader и payloads["id"] совпадают
+    pass
+
+
+@router.delete("/readers/{reader_id}/books/{book_id}")
+async def delete_book_from_reader(reader_id: int, book_id: int):
+    #админ всё может
+    #читатель только если id_reader и payloads["id"] совпадают
+    pass
+
+
 @router.delete(
     "/{reader_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Удалить читателя по указанному ID",
     responses={
         401: {"description": "Требуется аутентификация"},
+        403: {"description": "Недостаточно прав"},
         404: {"description": "Читатель с указанным ID не найден"}
         }
     )
 async def delete_book(
         reader_id: int,
         db_session: AsyncSession = Depends(get_db_session),
-        current_admin_id = Depends(get_current_id_admin_stateless)
+        payloads: dict[str, Any] = Depends(get_current_user_stateless)
 ):
     """
-    Удалить читателя по указанному ID. Требует аутентификации.
+    Удалить читателя по указанному ID. Требует аутентификации (Только администратор).
     - **reader_id**: ID удаляемого читателя.
     """
+    if payloads['role'] != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have sufficient rights to perform this action."
+        )
+
+
     db_reader = await db_session.get(Reader, reader_id)
     if db_reader is None:
         raise HTTPException(

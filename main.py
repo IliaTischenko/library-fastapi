@@ -1,12 +1,10 @@
-import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from sqlalchemy import text
 
 from auth_utils import create_first_admin_if_not_exists
 from database import engine, init_db_local, drop_db, AsyncSessionLocal
-from routers import autors, books, readers, admins, auth
+from routers import autors, books, readers, users, auth
 
 
 @asynccontextmanager
@@ -35,7 +33,7 @@ install(app)
 app.include_router(autors.router)
 app.include_router(books.router)
 app.include_router(readers.router)
-app.include_router(admins.router)
+app.include_router(users.router)
 app.include_router(auth.router)
 
 @app.get('/')
