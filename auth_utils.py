@@ -91,3 +91,45 @@ def get_current_user_stateless(access_token: str | None = Cookie(default=None)) 
         "role": payload["role"]
     }
     return current_user
+
+
+def requre_roles(roles: list[str] = None):
+    """
+        Проверяет JWT-токен, который пришёл в куках
+        извлекает payloads, проверяет роль текущего пользователя с требуемой ролью
+        - **access_token**: строка токена
+        - **roles**: список ролей для получения доступа к роуту
+
+         Возвращает ID юзера и роль
+        """
+    if roles is None:
+        roles = []
+
+    def dependency(access_token: str | None = Cookie(default=None)):
+        if not access_token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Not authenticated (Cookie missing)"
+            )
+
+        try:
+            payload = jwt.decode(access_token, SECRET_KEY, algorithms=[ALGORITHM])
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")
+        except jwt.InvalidTokenError:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session token")
+
+        current_user = {
+            "id": int(payload["sub"]),
+            "role": payload["role"]
+        }
+
+        if roles and current_user["role"] not in roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient rights"
+            )
+
+        return current_user
+
+    return dependency

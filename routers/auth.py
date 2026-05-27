@@ -1,10 +1,11 @@
+import os
 from typing import Any
 
 from fastapi import APIRouter, Response, status, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth_utils import verify_password, create_access_token, get_current_user_stateless
+from auth_utils import verify_password, create_access_token, requre_roles
 from database import get_db_session
 from models import User
 from schemas import UserAuthSchema
@@ -44,11 +45,15 @@ async def login(
         )
 
     token = create_access_token(user_id=db_user.id, role=db_user.role)
+
+    # seconds a day
+    max_age = int(os.getenv("ACCESS_TOKEN_EXPIRE_DAYS", "1")) * 86400
+
     response.set_cookie(
         key="access_token",
         value=token,
         httponly=True,
-        max_age=86400,
+        max_age=max_age,
         samesite="lax",
         secure=False
     )
@@ -64,7 +69,7 @@ async def login(
         401: {"description": "токен отсутствует или просрочен"}
     }
 )
-async def logout(response: Response, payloads: dict[str, Any] = Depends(get_current_user_stateless)):
+async def logout(response: Response, payloads: dict[str, Any] = Depends(requre_roles())):
     """
     Выход из системы.
     Удаляет токен из куки.

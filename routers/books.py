@@ -5,10 +5,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload, joinedload, contains_eager
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth_utils import get_current_user_stateless
+from auth_utils import requre_roles
 from database import get_db_session
-from models import Book, Author, Reader, UserRole
-from schemas import BookInput, BookUpdate, BookResponse, BookResponseShort
+from models import Book, Author, UserRole
+from schemas import BookInput, BookUpdate, BookResponse
 
 router = APIRouter(prefix='/books', tags=["Книги"])
 
@@ -16,7 +16,7 @@ router = APIRouter(prefix='/books', tags=["Книги"])
 @router.get(
     "/",
     status_code=status.HTTP_200_OK,
-    response_model=list[BookResponseShort],
+    response_model=list[BookResponse],
     summary="Получить список книг с фильтрацией",
     )
 async def get_books(
@@ -64,7 +64,7 @@ async def get_book_detail(book_id: int, db_session: AsyncSession = Depends(get_d
     db_book = await db_session.get(
         Book,
         book_id,
-        options=[selectinload(Book.readers), joinedload(Book.author)]
+        options=[joinedload(Book.author)]
     )
     if db_book is None:
         raise HTTPException(
@@ -90,7 +90,7 @@ async def get_book_detail(book_id: int, db_session: AsyncSession = Depends(get_d
 async def create_book(
         book_data: BookInput,
         db_session: AsyncSession = Depends(get_db_session),
-        payloads: dict[str, Any] = Depends(get_current_user_stateless)
+        payloads: dict[str, Any] = Depends(requre_roles(roles=["admin"]))
 ):
     """
     Создание новой книги. Требует аутентификации (Только администратор).
@@ -103,12 +103,6 @@ async def create_book(
     Возвращает объект созданной книги с присвоенным ID из БД,
     подтягивает автора(one to many) и список читателей (many-to-many связь)
     """
-    if payloads['role'] != UserRole.ADMIN:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have sufficient rights to perform this action."
-        )
-
     db_author = await db_session.get(Author, book_data.author_id)
 
     if db_author is None:
@@ -119,29 +113,24 @@ async def create_book(
 
 
     data_dict = book_data.model_dump()
-    readers_ids = data_dict.pop("readers_ids", [])
     new_book = Book(**data_dict)
 
-    if readers_ids:
-        query = select(Reader).where(Reader.id.in_(readers_ids))
-        result = await db_session.execute(query)
-        readers = result.scalars().all()
-
-        new_book.readers = readers
-
-
+    #new_book.author = db_author
     db_session.add(new_book)
 
     await db_session.commit()
     await db_session.refresh(new_book)
 
-    result = await db_session.execute(
-        select(Book)
-        .options(selectinload(Book.readers), joinedload(Book.author))
-        .where(Book.id == new_book.id)
-    )
-    book_with_relations = result.scalar_one()
+    #get не подтягивает автора
+    #book_with_relations = await db_session.get(Book, new_book.id, options=[joinedload(Book.author)])
 
+    result = await db_session.execute(
+        select(Book).
+        where(Book.id==new_book.id).
+        options(joinedload(Book.author))
+    )
+
+    book_with_relations = result.scalar_one()
     return book_with_relations
 
 
@@ -160,7 +149,7 @@ async def put_book(
         book_id: int,
         book_data: BookInput,
         db_session:AsyncSession = Depends(get_db_session),
-        payloads: dict[str, Any] = Depends(get_current_user_stateless)
+        payloads: dict[str, Any] = Depends(requre_roles(roles=["admin"]))
 ):
     """
     Полное обновление (замена) данных книги. Требует аутентификации (Только администратор).
@@ -174,17 +163,7 @@ async def put_book(
 
     Возвращает объект с заменёнными данными, подтягивает автора(one to many) и список читателей (many-to-many связь)
     """
-    if payloads['role'] != UserRole.ADMIN:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have sufficient rights to perform this action."
-        )
-
-    db_book = await db_session.get(
-        Book,
-        book_id,
-        options=[selectinload(Book.readers)]
-    )
+    db_book = await db_session.get(Book, book_id)
 
     if db_book is None:
         raise HTTPException(
@@ -201,15 +180,6 @@ async def put_book(
         )
 
     update_data = book_data.model_dump()
-    readers_ids = update_data.pop("readers_ids", [])
-
-
-    if readers_ids:
-        query = select(Reader).where(Reader.id.in_(readers_ids))
-        result = await db_session.execute(query)
-        readers = result.scalars().all()
-        db_book.readers = readers
-
 
     for key, val in update_data.items():
         setattr(db_book, key, val)
@@ -218,7 +188,7 @@ async def put_book(
 
     result = await db_session.execute(
         select(Book)
-        .options(selectinload(Book.readers), joinedload(Book.author))
+        .options(joinedload(Book.author))
         .where(Book.id == book_id)
     )
 
@@ -242,7 +212,7 @@ async def patch_book(
         book_id: int,
         book_data: BookUpdate,
         db_session:AsyncSession = Depends(get_db_session),
-        payloads: dict[str, Any] = Depends(get_current_user_stateless)
+        payloads: dict[str, Any] = Depends(requre_roles(roles=["admin"]))
 ):
     """
     Частично обновить данные книги. Требует аутентификации (Только администратор)
@@ -257,12 +227,6 @@ async def patch_book(
 
     Возвращает книгу, подтягивает её автора(1tm) и читателей(mtm)
     """
-    if payloads['role'] != UserRole.ADMIN:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have sufficient rights to perform this action."
-        )
-
 
     db_book = await db_session.get(
         Book,
@@ -286,13 +250,6 @@ async def patch_book(
             )
 
     update_data = book_data.model_dump(exclude_unset=True)
-    readers_ids = update_data.pop("readers_ids", [])
-
-    if readers_ids:
-        query = select(Reader).where(Reader.id.in_(readers_ids))
-        result = await db_session.execute(query)
-        readers = result.scalars().all()
-        db_book.readers = readers
 
 
     for key, val in update_data.items():
@@ -302,7 +259,7 @@ async def patch_book(
 
     result = await db_session.execute(
         select(Book)
-        .options(selectinload(Book.readers), joinedload(Book.author))
+        .options(joinedload(Book.author))
         .where(Book.id == book_id)
     )
 
@@ -325,18 +282,12 @@ async def patch_book(
 async def delete_book(
         book_id: int,
         db_session: AsyncSession = Depends(get_db_session),
-        payloads: dict[str, Any] = Depends(get_current_user_stateless)
+        payloads: dict[str, Any] = Depends(requre_roles(roles=["admin"]))
 ):
     """
     Удалить книгу по указанному id. Требует аутентификации (Только администратор).
     - **book_id**: ID удаляемой книги.
     """
-    if payloads['role'] != UserRole.ADMIN:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have sufficient rights to perform this action."
-        )
-
     db_book = await db_session.get(Book, book_id)
 
     if db_book is None:
