@@ -1,4 +1,5 @@
 import os
+import time
 from typing import Any
 
 from fastapi import APIRouter, Response, status, Depends, HTTPException
@@ -8,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from auth_utils import verify_password, create_access_token, requre_roles
 from database import get_db_session
 from models import User
+from redis_client import get_redis_client, add_token_to_blacklist
 from schemas import UserAuthSchema
 
 
@@ -72,7 +74,17 @@ async def login(
 async def logout(response: Response, payloads: dict[str, Any] = Depends(requre_roles())):
     """
     Выход из системы.
+    Заносим токен в блеклист (Redis)
     Удаляет токен из куки.
         """
+
+    current_time = int(time.time())
+    remain_seconds = payloads['exp'] - current_time
+
+    await add_token_to_blacklist(
+        token=payloads['token_str'],
+        expire_seconds=remain_seconds
+    )
     response.delete_cookie(key="access_token")
+
     return {"detail": "logout success"}
