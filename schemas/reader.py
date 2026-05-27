@@ -2,12 +2,15 @@ from datetime import date
 
 from pydantic import BaseModel, Field, conint
 
+from schemas import UserResponse
 
 
-class ReaderResponseShort(BaseModel):
+class ReaderResponse(BaseModel):
     id: int
     full_name: str
     register_date: date
+    books: list["BookResponse"] = []
+    user: UserResponse
 
     class Config:
         from_attributes = True
@@ -17,11 +20,6 @@ class ReaderInput(BaseModel):
     full_name: str = Field(..., max_length=30, examples=['Kirill Ryabov'], description="Полное имя читателя")
     books_ids: list[conint(ge=0)] = Field(examples=[[0, 1]], description="список ID книг (>0)")
     register_date: date = Field(default_factory=date.today, description="Дата регистрации читателя в формате YYYY-MM-DD")
-
-
-class ReaderResponse(ReaderResponseShort):
-    books: list["BookResponseShort"] = []
-
 
 
 class ReaderUpdate(BaseModel):

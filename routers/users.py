@@ -28,7 +28,7 @@ async def get_users(
     if payloads['role'] != UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have sufficient rights to perform this action."
+            detail="Insufficient rights"
         )
 
 

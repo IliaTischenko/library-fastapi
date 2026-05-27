@@ -43,11 +43,6 @@ class Book(Base):
         "Author",
         back_populates='books'
     )
-    readers: Mapped[list["Reader"]] = relationship(
-        "Reader",
-        secondary=book_reader_association,
-        back_populates='books'
-    )
 
 
 class Reader(Base):
@@ -56,8 +51,8 @@ class Reader(Base):
     full_name: Mapped[str] = mapped_column(nullable=False)
     books: Mapped[list["Book"]] = relationship(
         "Book",
-        secondary=book_reader_association,
-        back_populates="readers")
+        secondary=book_reader_association
+    )
     register_date: Mapped[date] = mapped_column(nullable=False)
 
     user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=False, unique=True)
