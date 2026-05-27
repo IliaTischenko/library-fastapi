@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from auth_utils import create_first_admin_if_not_exists
 from database import engine, init_db_local, drop_db, AsyncSessionLocal
 from routers import autors, books, readers, users, auth
+from redis_client import get_redis_client
 
 
 @asynccontextmanager
@@ -15,6 +16,9 @@ async def lifespan(app: FastAPI):
         await create_first_admin_if_not_exists(session)
         print("First admin created")
     yield
+
+    redis_client = get_redis_client()
+    await redis_client.close()
     await engine.dispose()
 
 
