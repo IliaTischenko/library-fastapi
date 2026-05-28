@@ -1,4 +1,4 @@
-from schemas import UserAuthSchema, ReaderInput
+from app.schemas import UserAuthSchema, ReaderInput
 
 
 class UserReaderInput(UserAuthSchema, ReaderInput):
