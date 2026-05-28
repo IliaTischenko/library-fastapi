@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import User, UserRole
+from redis_client import is_token_blacklisted
 
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "12345678")
 ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
@@ -100,17 +101,24 @@ def requre_roles(roles: list[str] = None):
         - **access_token**: строка токена
         - **roles**: список ролей для получения доступа к роуту
 
-         Возвращает ID юзера и роль
+         Возвращает ID юзера, роль, строку токена и его время жизни
         """
     if roles is None:
         roles = []
 
-    def dependency(access_token: str | None = Cookie(default=None)):
+    async def dependency(access_token: str | None = Cookie(default=None)):
         if not access_token:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Not authenticated (Cookie missing)"
+                detail="Not authenticated (Cookie missing/Token in blacklist)"
             )
+
+        if await is_token_blacklisted(access_token):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Session revoked. Please log in again."
+            )
+
 
         try:
             payload = jwt.decode(access_token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -121,7 +129,9 @@ def requre_roles(roles: list[str] = None):
 
         current_user = {
             "id": int(payload["sub"]),
-            "role": payload["role"]
+            "role": payload["role"],
+            "exp": int(payload["exp"]),
+            "token_str": access_token
         }
 
         if roles and current_user["role"] not in roles:

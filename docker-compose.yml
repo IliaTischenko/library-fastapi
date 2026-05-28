@@ -16,6 +16,20 @@ services:
       timeout: 5s   # Ждать ответа не больше 5 секунд
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    container_name: fastapi_library_redis
+    ports:
+    - "6379:6379"
+    volumes:
+    - redis_data:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+
   app:
     build: .
     container_name: fastapi_library_app
@@ -29,5 +43,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
 volumes:
   postgres_data:
+  redis_data:
