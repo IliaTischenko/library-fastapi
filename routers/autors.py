@@ -12,6 +12,8 @@ from schemas import AuthorInput, AuthorUpdate, AuthorResponse
 
 
 router = APIRouter(prefix='/authors', tags=["Авторы"])
+ITEMS_PER_PAGE = 10
+
 
 @router.get(
     "/",
@@ -22,19 +24,25 @@ router = APIRouter(prefix='/authors', tags=["Авторы"])
 async def get_authors(
     author_name: Optional[str] = Query(None, description="Search by name"),
     country: Optional[str] = Query(None, description="Search by country"),
-    db_session: AsyncSession = Depends(get_db_session)
+    db_session: AsyncSession = Depends(get_db_session),
+    page: int = Query(default=1, ge=1)
 ):
     """
     Возвращает список авторов с возможностью фильтрации.
     - **author_name**: Поиск по имени или фамилии автора (частичное совпадение)
     - **country**: Поиск по названию страны (без учёта регистра)
     """
+
     query = select(Author)
     if author_name:
         query = query.where(Author.full_name.ilike(f"%{author_name}%"))
 
     if country:
         query = query.where(Author.country.ilike(country))
+
+
+    offset_value = (page - 1) * ITEMS_PER_PAGE
+    query = query.offset(offset_value).limit(ITEMS_PER_PAGE)
 
     result = await db_session.execute(query)
     authors = result.scalars().all()

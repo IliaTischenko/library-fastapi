@@ -7,11 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth_utils import requre_roles
 from database import get_db_session
-from models import Book, Author, UserRole
+from models import Book, Author
 from schemas import BookInput, BookUpdate, BookResponse
 
 router = APIRouter(prefix='/books', tags=["Книги"])
 
+ITEMS_PER_PAGE = 10
 
 @router.get(
     "/",
@@ -22,7 +23,8 @@ router = APIRouter(prefix='/books', tags=["Книги"])
 async def get_books(
         author_name: Optional[str] = Query(None, description="Search by author name"),
         book_title: Optional[str] = Query(None, description="Search by book title"),
-        db_session: AsyncSession = Depends(get_db_session)
+        db_session: AsyncSession = Depends(get_db_session),
+        page: int = Query(default=1, ge=1)
 ):
     """
     Возвращает список книг с возможностью фильтрации,
@@ -30,8 +32,6 @@ async def get_books(
 
     - **author_name**: поиск по имени автора (частичное совпадение)
     - **book_title**: поиск по названию книги(частичное совпадение)
-
-
     """
     query = select(Book)
     if author_name:
@@ -42,6 +42,9 @@ async def get_books(
 
     if book_title:
         query = query.where(Book.title.ilike(f"%{book_title}%"))
+
+    offset_value = (page - 1) * ITEMS_PER_PAGE
+    query = query.offset(offset_value).limit(ITEMS_PER_PAGE)
 
     result = await db_session.execute(query)
     return result.scalars().all()

@@ -14,6 +14,8 @@ from schemas import ReaderInput, ReaderUpdate, ReaderResponse
 
 router = APIRouter(prefix='/readers', tags=["Читатели"])
 
+ITEMS_PER_PAGE = 10
+
 
 @router.get(
     "/",
@@ -26,7 +28,8 @@ async def get_readers(
         book_title: Optional[str] = Query(None, description="Search reader with book title"),
         start_date: Optional[date] = Query(None, description="Search at date (to end_date)"),
         end_date: Optional[date] = Query(None, description="Search to date (at start_date)"),
-        db_session: AsyncSession = Depends(get_db_session)
+        db_session: AsyncSession = Depends(get_db_session),
+        page: int = Query(default=1, ge=1)
 ):
     """
     Получить список читателей с возможностью фильтациии, подтягивает список книг читателя(mtm связь)
@@ -40,21 +43,22 @@ async def get_readers(
     query = select(Reader).options(selectinload(Reader.books).joinedload(Book.author), joinedload(Reader.user))
     if name:
         query = query.where(Reader.full_name.ilike(f"%{name}%"))
-    if book_title:
-        query = (
-            query.
-            join(Reader.books).
-            where(Book.title.ilike(f"%{book_title}%"))
-        )
     if start_date:
         query = query.where(Reader.issue_date >= start_date)
     if end_date:
         query = query.where(Reader.issue_date <= end_date)
+    if book_title:
+        query = query.where(
+            Reader.books.any(Book.title.ilike(f"{book_title}%"))
+        )
 
+    query = query.distinct()
+    offset_value = (page - 1) * ITEMS_PER_PAGE
+    query = query.offset(offset_value).limit(ITEMS_PER_PAGE)
 
 
     result = await db_session.execute(query)
-    readers = result.scalars().unique().all()
+    readers = result.scalars().all()
 
     return readers
 
