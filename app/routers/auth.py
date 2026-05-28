@@ -10,7 +10,7 @@ from app.auth_utils import verify_password, create_access_token, requre_roles
 from app.database import get_db_session
 from app.models import User
 from app.schemas import UserAuthSchema
-from redis_client import get_redis_client, add_token_to_blacklist
+from app.redis_client import add_token_to_blacklist
 
 
 
