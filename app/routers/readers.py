@@ -2,14 +2,14 @@ from datetime import date
 from typing import Optional, Any
 
 from fastapi import APIRouter, status, Query, Depends, HTTPException
-from sqlalchemy import select, delete
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload, joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth_utils import requre_roles
-from database import get_db_session
-from models import Reader, Book, book_reader_association
-from schemas import ReaderInput, ReaderUpdate, ReaderResponse
+from app.auth_utils import requre_roles
+from app.database import get_db_session
+from app.models import Reader, Book
+from app.schemas import ReaderInput, ReaderUpdate, ReaderResponse
 
 
 router = APIRouter(prefix='/readers', tags=["Читатели"])

@@ -2,7 +2,7 @@ from datetime import date
 
 from pydantic import BaseModel, Field, conint
 
-from schemas import UserResponse
+from app.schemas import UserResponse
 
 
 class ReaderResponse(BaseModel):

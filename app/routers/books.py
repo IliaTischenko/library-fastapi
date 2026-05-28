@@ -5,10 +5,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload, joinedload, contains_eager
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth_utils import requre_roles
-from database import get_db_session
-from models import Book, Author
-from schemas import BookInput, BookUpdate, BookResponse
+from app.auth_utils import requre_roles
+from app.database import get_db_session
+from app.models import Book, Author
+from app.schemas import BookInput, BookUpdate, BookResponse
 
 router = APIRouter(prefix='/books', tags=["Книги"])
 

@@ -6,11 +6,11 @@ from fastapi import APIRouter, Response, status, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth_utils import verify_password, create_access_token, requre_roles
-from database import get_db_session
-from models import User
+from app.auth_utils import verify_password, create_access_token, requre_roles
+from app.database import get_db_session
+from app.models import User
+from app.schemas import UserAuthSchema
 from redis_client import get_redis_client, add_token_to_blacklist
-from schemas import UserAuthSchema
 
 
 

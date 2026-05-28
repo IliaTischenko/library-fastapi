@@ -1,6 +1,6 @@
-from pydantic import BaseModel, Field, conint
+from pydantic import BaseModel, Field
 
-from schemas import AuthorResponse
+from app.schemas import AuthorResponse
 
 
 class BookResponse(BaseModel):

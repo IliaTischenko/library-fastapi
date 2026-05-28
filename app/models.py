@@ -5,7 +5,7 @@ from typing import Optional
 from sqlalchemy import Column, Integer, Table, ForeignKey, Enum
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 
-from database import Base
+from app.database import Base
 
 
 class UserRole(str, enum.Enum):

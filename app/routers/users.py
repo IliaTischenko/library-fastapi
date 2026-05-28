@@ -4,10 +4,10 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth_utils import get_password_hash, verify_password, get_current_user_stateless
-from database import get_db_session
-from models import User, UserRole, Reader, Book
-from schemas import UserAuthSchema, UserResponse, UserChangePassword, UserReaderInput, ReaderResponse
+from app.auth_utils import get_password_hash, verify_password, get_current_user_stateless
+from app.database import get_db_session
+from app.models import User, UserRole, Reader, Book
+from app.schemas import UserAuthSchema, UserResponse, UserChangePassword, UserReaderInput, ReaderResponse
 
 
 router = APIRouter(prefix="/users", tags=['Пользователи'])

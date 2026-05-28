@@ -7,7 +7,7 @@ from fastapi import Cookie, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models import User, UserRole
+from app.models import User, UserRole
 from redis_client import is_token_blacklisted
 
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "12345678")

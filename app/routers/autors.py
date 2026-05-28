@@ -4,10 +4,10 @@ from fastapi import APIRouter, status, Query, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth_utils import requre_roles
-from database import get_db_session
-from models import Author, UserRole
-from schemas import AuthorInput, AuthorUpdate, AuthorResponse
+from app.auth_utils import requre_roles
+from app.database import get_db_session
+from app.models import Author
+from app.schemas import AuthorInput, AuthorUpdate, AuthorResponse
 
 
 

@@ -2,10 +2,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from auth_utils import create_first_admin_if_not_exists
-from database import engine, init_db_local, drop_db, AsyncSessionLocal
-from routers import autors, books, readers, users, auth
 from redis_client import get_redis_client
+from app.auth_utils import create_first_admin_if_not_exists
+from app.database import engine, drop_db, AsyncSessionLocal
+from app.routers import autors, books, readers, users, auth
 
 
 @asynccontextmanager
