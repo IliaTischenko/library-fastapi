@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 from app.schemas import AuthorResponse
 
@@ -8,9 +8,7 @@ class BookResponse(BaseModel):
     title: str
     author: AuthorResponse
     pages: int
-
-    class Config:
-        from_attributes=True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BookInput(BaseModel):

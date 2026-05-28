@@ -1,6 +1,6 @@
 from datetime import date
 
-from pydantic import BaseModel, Field, conint
+from pydantic import BaseModel, Field, conint, ConfigDict
 
 from app.schemas import UserResponse
 
@@ -11,9 +11,7 @@ class ReaderResponse(BaseModel):
     register_date: date
     books: list["BookResponse"] = []
     user: UserResponse
-
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ReaderInput(BaseModel):
