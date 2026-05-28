@@ -1,6 +1,6 @@
 from datetime import date
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class AuthorInput(BaseModel):
@@ -28,9 +28,8 @@ class AuthorResponse(BaseModel):
     full_name: str
     country: str
     birth_date: date
+    model_config = ConfigDict(from_attributes=True)
 
-    class Config:
-        from_attributes = True
 
 
 class AuthorUpdate(BaseModel):
