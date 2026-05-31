@@ -6,7 +6,7 @@ from fastapi import APIRouter, Response, status, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth_utils import verify_password, create_access_token, requre_roles
+from app.auth_utils import verify_password, create_access_token, requre_roles, RoleChecker
 from app.database import get_db_session
 from app.models import User
 from app.schemas import UserAuthSchema
@@ -71,7 +71,7 @@ async def login(
         401: {"description": "токен отсутствует или просрочен"}
     }
 )
-async def logout(response: Response, payloads: dict[str, Any] = Depends(requre_roles())):
+async def logout(response: Response, payloads: dict[str, Any] = Depends(RoleChecker())):
     """
     Выход из системы.
     Заносим токен в блеклист (Redis)

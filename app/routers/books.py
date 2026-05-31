@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload, joinedload, contains_eager
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth_utils import requre_roles
+from app.auth_utils import requre_roles, RoleChecker
 from app.database import get_db_session
 from app.models import Book, Author
 from app.schemas import BookInput, BookUpdate, BookResponse
@@ -93,7 +93,7 @@ async def get_book_detail(book_id: int, db_session: AsyncSession = Depends(get_d
 async def create_book(
         book_data: BookInput,
         db_session: AsyncSession = Depends(get_db_session),
-        payloads: dict[str, Any] = Depends(requre_roles(roles=["admin"]))
+        payloads: dict[str, Any] = Depends(RoleChecker(["admin"]))
 ):
     """
     Создание новой книги. Требует аутентификации (Только администратор).
@@ -152,7 +152,7 @@ async def put_book(
         book_id: int,
         book_data: BookInput,
         db_session:AsyncSession = Depends(get_db_session),
-        payloads: dict[str, Any] = Depends(requre_roles(roles=["admin"]))
+        payloads: dict[str, Any] = Depends(RoleChecker(["admin"]))
 ):
     """
     Полное обновление (замена) данных книги. Требует аутентификации (Только администратор).
@@ -215,7 +215,7 @@ async def patch_book(
         book_id: int,
         book_data: BookUpdate,
         db_session:AsyncSession = Depends(get_db_session),
-        payloads: dict[str, Any] = Depends(requre_roles(roles=["admin"]))
+        payloads: dict[str, Any] = Depends(RoleChecker(["admin"]))
 ):
     """
     Частично обновить данные книги. Требует аутентификации (Только администратор)
@@ -285,7 +285,7 @@ async def patch_book(
 async def delete_book(
         book_id: int,
         db_session: AsyncSession = Depends(get_db_session),
-        payloads: dict[str, Any] = Depends(requre_roles(roles=["admin"]))
+        payloads: dict[str, Any] = Depends(RoleChecker(["admin"]))
 ):
     """
     Удалить книгу по указанному id. Требует аутентификации (Только администратор).

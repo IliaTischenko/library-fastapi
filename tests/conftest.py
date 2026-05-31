@@ -1,9 +1,13 @@
 import asyncio
 import pytest
+from unittest.mock import patch, AsyncMock
 import pytest_asyncio
+
+from fastapi import HTTPException, status
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
+from app.auth_utils import RoleChecker
 from app.main import app
 from app.database import Base, get_db_session
 
@@ -48,6 +52,11 @@ async def prepare_test_db(test_engine):
 async def get_test_db_session(async_session_test):
     async with async_session_test() as session:
         yield session
+
+
+
+
+
 
 
 @pytest_asyncio.fixture(scope="function")
