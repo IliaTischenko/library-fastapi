@@ -94,6 +94,48 @@ def get_current_user_stateless(access_token: str | None = Cookie(default=None)) 
     return current_user
 
 
+class RoleChecker:
+    def __init__(self, requre_roles: list[str] = None):
+        self.requre_roles = requre_roles
+
+    async def __call__(self, access_token: str | None = Cookie(default=None)):
+        if not access_token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Not authenticated (Cookie missing/Token in blacklist)"
+            )
+
+        if await is_token_blacklisted(access_token):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Session revoked. Please log in again."
+            )
+
+
+        try:
+            payload = jwt.decode(access_token, SECRET_KEY, algorithms=[ALGORITHM])
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")
+        except jwt.InvalidTokenError:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session token")
+
+        current_user = {
+            "id": int(payload["sub"]),
+            "role": payload["role"],
+            "exp": int(payload["exp"]),
+            "token_str": access_token
+        }
+
+        if self.requre_roles and current_user["role"] not in self.requre_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient rights"
+            )
+
+        return current_user
+
+
+
 def requre_roles(roles: list[str] = None):
     """
         Проверяет JWT-токен, который пришёл в куках
