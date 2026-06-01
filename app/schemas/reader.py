@@ -15,15 +15,25 @@ class ReaderResponse(BaseModel):
 
 
 class ReaderInput(BaseModel):
-    full_name: str = Field(..., max_length=30, examples=['Kirill Ryabov'], description="Полное имя читателя")
+    full_name: str = Field(
+        ...,
+        min_length=1,
+        max_length=30,
+        examples=['Kirill Ryabov'],
+        description="Полное имя читателя"
+    )
     books_ids: list[conint(ge=0)] = Field(examples=[[0, 1]], description="список ID книг (>0)")
-    register_date: date = Field(default_factory=date.today, description="Дата регистрации читателя в формате YYYY-MM-DD")
+    register_date: date = Field(
+        default_factory=date.today,
+        description="Дата регистрации читателя в формате YYYY-MM-DD"
+    )
 
 
 class ReaderUpdate(BaseModel):
     full_name: str | None = Field(
         default=None,
         max_length=30,
+        min_length=1,
         examples=['Kirill Ryabov'],
         description="Полное имя читателя"
     )

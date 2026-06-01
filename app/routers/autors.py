@@ -4,7 +4,7 @@ from fastapi import APIRouter, status, Query, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth_utils import requre_roles, RoleChecker
+from app.auth_utils import RoleChecker
 from app.database import get_db_session
 from app.models import Author
 from app.schemas import AuthorInput, AuthorUpdate, AuthorResponse
@@ -88,8 +88,7 @@ async def get_author_detail(author_id: int, db_session: AsyncSession = Depends(g
 async def create_author(
         author_data: AuthorInput,
         db_session: AsyncSession = Depends(get_db_session),
-        payloads: dict[str, Any] = Depends(RoleChecker(["admin"]))):
-    #payloads: dict[str, Any] = Depends(requre_roles(roles=["admin"]))
+        payloads: dict[str, Any] = Depends(RoleChecker(("admin",)))):
     """
     Создание нового автора. Требует аутентификации (Только администратор)
     Принимает JSON-объект с данными автора, валидирует их
@@ -120,7 +119,7 @@ async def put_author(
         author_id: int,
         author_data: AuthorInput,
         db_session: AsyncSession = Depends(get_db_session),
-        payloads: dict[str, Any] = Depends(RoleChecker(["admin"]))):
+        payloads: dict[str, Any] = Depends(RoleChecker(("admin",)))):
     """
     Полное обновление (замена) данных автора. Требует аутентификации. (Только администратор)
     Принимает JSON-объект с данными книги, валидирует их
@@ -162,7 +161,7 @@ async def patch_author(
         author_id: int,
         author_data: AuthorUpdate,
         db_session: AsyncSession = Depends(get_db_session),
-        payloads: dict[str, Any] = Depends(RoleChecker(["admin"]))
+        payloads: dict[str, Any] = Depends(RoleChecker(("admin",)))
 ):
     """
     Частичное обновление данных автора. Требует аутентификации. (Только администратор)
@@ -203,7 +202,7 @@ async def patch_author(
 async def delete_author(
         author_id: int,
         db_session: AsyncSession = Depends(get_db_session),
-        payloads: dict[str, Any] = Depends(RoleChecker(["admin"]))
+        payloads: dict[str, Any] = Depends(RoleChecker(("admin",)))
 ):
     """
     Удалить автора по указанному id. Требует аутентификации. (Только администратор)

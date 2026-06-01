@@ -68,7 +68,7 @@ def create_access_token(user_id: int, role: str) -> str:
 
     return encoded_jwt
 
-
+#OLD
 def get_current_user_stateless(access_token: str | None = Cookie(default=None)) -> dict:
     """
     Проверяет JWT-токен, который пришёл в куках
@@ -94,9 +94,17 @@ def get_current_user_stateless(access_token: str | None = Cookie(default=None)) 
     return current_user
 
 
+
+
 class RoleChecker:
-    def __init__(self, requre_roles: list[str] = None):
+    def __init__(self, requre_roles: tuple[str, ...] = ()):
         self.requre_roles = requre_roles
+
+    def __eq__(self, other):
+        return isinstance(other, RoleChecker) and self.requre_roles == other.requre_roles
+
+    def __hash__(self):
+        return hash(self.requre_roles)
 
     async def __call__(self, access_token: str | None = Cookie(default=None)):
         if not access_token:
@@ -135,7 +143,7 @@ class RoleChecker:
         return current_user
 
 
-
+#OLD
 def requre_roles(roles: list[str] = None):
     """
         Проверяет JWT-токен, который пришёл в куках

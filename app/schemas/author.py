@@ -6,12 +6,14 @@ from pydantic import BaseModel, Field, ConfigDict
 class AuthorInput(BaseModel):
     full_name: str = Field(
         ...,
+        min_length=1,
         max_length=30,
         description="Полное имя автора. Должно быть уникальным.",
         examples=["Viktor Sila"]
     )
     country: str = Field(
         ...,
+        min_length=1,
         max_length=30,
         description="Страна",
         examples=['China']
@@ -35,12 +37,14 @@ class AuthorResponse(BaseModel):
 class AuthorUpdate(BaseModel):
     full_name: str | None = Field(
         default=None,
+        min_length=1,
         max_length=30,
         description="Полное имя автора. Должно быть уникальным.",
         examples=["Viktor Sila"]
     )
     country: str | None = Field(
         default=None,
+        min_length=1,
         max_length=30,
         description="Страна",
         examples=['China']
