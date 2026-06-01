@@ -1,11 +1,12 @@
-import asyncio
+from typing import AsyncGenerator,Iterator, Callable, Any, NoReturn
+
+
 import pytest
-from unittest.mock import patch, AsyncMock
 import pytest_asyncio
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 from httpx import AsyncClient, ASGITransport
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession, AsyncEngine
 
 from app.auth_utils import RoleChecker
 from app.main import app
@@ -16,7 +17,7 @@ DATABASE_URL = f"postgresql+asyncpg://postgres:postgres@test_db:5432/library_tes
 
 
 @pytest_asyncio.fixture(scope="session")
-async def test_engine():
+async def test_engine() -> AsyncGenerator[AsyncEngine, None]:
     engine = create_async_engine(
         DATABASE_URL,
         echo=False,
@@ -27,8 +28,9 @@ async def test_engine():
 
     await engine.dispose()
 
+
 @pytest_asyncio.fixture(scope="session")
-async def async_session_test(test_engine):
+async def async_session_test(test_engine: AsyncEngine) -> AsyncGenerator[async_sessionmaker[AsyncSession], None]:
     AsyncSessionTest = async_sessionmaker(
         bind = test_engine,
         class_=AsyncSession,
@@ -38,7 +40,7 @@ async def async_session_test(test_engine):
 
 
 @pytest_asyncio.fixture(scope="session", autouse=True)
-async def prepare_test_db(test_engine):
+async def prepare_test_db(test_engine: AsyncEngine) -> AsyncGenerator[None, None]:
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -49,19 +51,47 @@ async def prepare_test_db(test_engine):
 
 
 @pytest_asyncio.fixture(scope="function")
-async def get_test_db_session(async_session_test):
+async def get_test_db_session(async_session_test) -> AsyncGenerator[AsyncSession, None]:
     async with async_session_test() as session:
         yield session
 
 
 
+@pytest.fixture(scope="function")
+def setup_auth() -> Iterator[Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn]]:
+    """
+    Фикстура заглушка для поведения авторизации
+    при HTTPexeption - RoleChecker выбросит соответсвующую ошибку
+    при dict успешная авторизация с указанными payloads
+    """
+    captured_keys = []
+    def _factory(setup_behavior):
+        async def mock_call(access_token: str | None = None) -> dict[str, Any] | NoReturn:
+            if isinstance(setup_behavior, HTTPException):
+                raise setup_behavior
+            return setup_behavior
+
+        keys = [
+            RoleChecker(), RoleChecker(("admin",)), RoleChecker(("admin", "reader",))
+        ]
+
+        for key in keys:
+            app.dependency_overrides[key] = mock_call
+            captured_keys.append(key)
+
+        return mock_call
 
 
+
+    yield _factory
+
+    for key in captured_keys:
+        app.dependency_overrides.pop(key, None)
 
 
 @pytest_asyncio.fixture(scope="function")
-async def client(async_session_test):
-    async def _override_get_db_session():
+async def client(async_session_test: async_sessionmaker[AsyncSession]) -> AsyncGenerator[AsyncClient, None]:
+    async def _override_get_db_session() -> AsyncGenerator[AsyncSession, None]:
         async with async_session_test() as session:
             yield session
 

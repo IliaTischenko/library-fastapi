@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload, joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth_utils import requre_roles, RoleChecker
+from app.auth_utils import RoleChecker
 from app.database import get_db_session
 from app.models import Reader, Book
 from app.schemas import ReaderInput, ReaderUpdate, ReaderResponse
@@ -105,7 +105,7 @@ async def put_reader(
         reader_id: int,
         reader_data: ReaderInput,
         db_session: AsyncSession = Depends(get_db_session),
-        payloads: dict[str, Any] = Depends(requre_roles(roles=["admin"]))
+        payloads: dict[str, Any] = Depends(RoleChecker(("admin",)))
 ):
     """
     Полное обновление (замена) данных читателя. Требует аутентификации (Только Администратор).
@@ -173,7 +173,7 @@ async def patch_reader(
         reader_id: int,
         reader_data: ReaderUpdate,
         db_session: AsyncSession = Depends(get_db_session),
-        payloads: dict[str, Any] = Depends(requre_roles(roles=["admin"]))
+        payloads: dict[str, Any] = Depends(RoleChecker(("admin",)))
 ):
     """
      Частично обновить данные читателя. Требует аутентификации (Только администратор)
@@ -239,7 +239,7 @@ async def add_book_to_reader(
         reader_id: int,
         book_id: int,
         db_session: AsyncSession = Depends(get_db_session),
-        payloads: dict[str, Any] = Depends(RoleChecker(["admin", "reader"]))
+        payloads: dict[str, Any] = Depends(RoleChecker(("admin", "reader",)))
 ):
     """
     Добавить книгу читателю.
@@ -311,7 +311,7 @@ async def delete_book_from_reader(
         reader_id: int,
         book_id: int,
         db_session: AsyncSession = Depends(get_db_session),
-        payloads: dict[str, Any] = Depends(RoleChecker(["admin", "reader"]))
+        payloads: dict[str, Any] = Depends(RoleChecker(("admin", "reader",)))
 ):
     """
     Удалить книгу читателю.
@@ -376,7 +376,7 @@ async def delete_book_from_reader(
 async def delete_book(
         reader_id: int,
         db_session: AsyncSession = Depends(get_db_session),
-        payloads: dict[str, Any] = Depends(RoleChecker(["admin"]))
+        payloads: dict[str, Any] = Depends(RoleChecker(("admin",)))
 ):
     """
     Удалить читателя по указанному ID. Требует аутентификации (Только администратор).

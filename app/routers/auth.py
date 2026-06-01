@@ -6,7 +6,7 @@ from fastapi import APIRouter, Response, status, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth_utils import verify_password, create_access_token, requre_roles, RoleChecker
+from app.auth_utils import verify_password, create_access_token, RoleChecker
 from app.database import get_db_session
 from app.models import User
 from app.schemas import UserAuthSchema

@@ -4,7 +4,7 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth_utils import get_password_hash, verify_password, get_current_user_stateless
+from app.auth_utils import get_password_hash, verify_password, RoleChecker
 from app.database import get_db_session
 from app.models import User, UserRole, Reader, Book
 from app.schemas import UserAuthSchema, UserResponse, UserChangePassword, UserReaderInput, ReaderResponse
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/users", tags=['Пользователи'])
 )
 async def get_users(
         db_session:AsyncSession = Depends(get_db_session),
-        payloads: dict = Depends(get_current_user_stateless)):
+        payloads: dict = Depends(RoleChecker(("admin",)))):
     """
     Возвращает список пользователей
     Защищенный, только администраторы
@@ -166,7 +166,7 @@ async def change_pass(
         user_id: int,
         user_data: UserChangePassword,
         db_session: AsyncSession = Depends(get_db_session),
-        payloads: dict = Depends(get_current_user_stateless)
+        payloads: dict = Depends(RoleChecker())
 ):
     """
     Принимает JSON-объект с новым паролем, хеширует его и заменяет.
