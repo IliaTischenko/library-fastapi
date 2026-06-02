@@ -186,6 +186,8 @@ async def patch_author(
     for key, val in update_data.items():
         setattr(db_author, key, val)
 
+    await db_session.commit()
+
     return db_author
 
 
