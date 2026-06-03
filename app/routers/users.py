@@ -25,14 +25,6 @@ async def get_users(
     Возвращает список пользователей
     Защищенный, только администраторы
     """
-    if payloads['role'] != UserRole.ADMIN:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Insufficient rights"
-        )
-
-
-
     query = select(User)
     result = await db_session.execute(query)
     users = result.scalars().all()
@@ -47,11 +39,17 @@ async def get_users(
     response_model=UserResponse,
     summary="Регистрация нового админа",
     responses={
-        400: {"description": "Админ с таким именем уже существует"}
+        400: {"description": "Админ с таким именем уже существует"},
+        401: {"description": "Требуется аутентификация"},
+        403: {"description": "Недостаточно прав"}
     })
-async def create_admin(user_data: UserAuthSchema, db_session: AsyncSession = Depends(get_db_session)):
+async def create_admin(
+        user_data: UserAuthSchema,
+        db_session: AsyncSession = Depends(get_db_session),
+        current_user = Depends(RoleChecker(("admin",)))
+):
     """
-    Создание нового админа.
+    Создание нового админа. Только администратор
     Принимает JSON-объект с данными админа, валидирует их, проверяет username на уникальность
     хеширует пароль и сохраняет в БД
 
@@ -154,16 +152,18 @@ async def create_reader(
 
 
 @router.patch(
-    "/{admin_id}",
+    "/",
     status_code=status.HTTP_200_OK,
     response_model=UserResponse,
     summary="Смена пароля текущему юзеру",
     responses={
-        401: {"description": "Неверный старый пароль"}
+        400: {"description": "Неверный старый пароль"},
+        401: {"description": "Требуется аутентификация"},
+        404: {"description": "Пользователь не найден"}
+
     }
 )
 async def change_pass(
-        user_id: int,
         user_data: UserChangePassword,
         db_session: AsyncSession = Depends(get_db_session),
         payloads: dict = Depends(RoleChecker())
@@ -185,7 +185,7 @@ async def change_pass(
 
     if not verify_password(user_data.old_password, current_hash):
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="Wrong old password"
         )
 

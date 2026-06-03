@@ -231,11 +231,7 @@ async def patch_book(
     Возвращает книгу, подтягивает её автора(1tm) и читателей(mtm)
     """
 
-    db_book = await db_session.get(
-        Book,
-        book_id,
-        options=[selectinload(Book.readers)]
-        )
+    db_book = await db_session.get(Book, book_id)
 
     if db_book is None:
         raise HTTPException(

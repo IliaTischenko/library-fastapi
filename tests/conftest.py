@@ -4,7 +4,7 @@ from typing import AsyncGenerator,Iterator, Callable, Any, NoReturn
 import pytest
 import pytest_asyncio
 
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession, AsyncEngine
 
@@ -58,7 +58,7 @@ async def get_test_db_session(async_session_test) -> AsyncGenerator[AsyncSession
 
 
 @pytest.fixture(scope="function")
-def setup_auth() -> Iterator[Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn]]:
+def setup_auth() -> Iterator[Callable[[dict[str, Any]], dict[str, Any] | NoReturn]]:
     """
     Фикстура заглушка для поведения авторизации
     при HTTPexeption - RoleChecker выбросит соответсвующую ошибку
@@ -66,21 +66,31 @@ def setup_auth() -> Iterator[Callable[[HTTPException | dict[str, Any]], dict[str
     """
     captured_keys = []
     def _factory(setup_behavior):
-        async def mock_call(access_token: str | None = None) -> dict[str, Any] | NoReturn:
-            if isinstance(setup_behavior, HTTPException):
-                raise setup_behavior
-            return setup_behavior
+        def create_mock(instance: RoleChecker):
+            async def mock_call(access_token: str | None = None) -> dict[str, Any] | NoReturn:
+                if not setup_behavior["token"]:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Not authenticated (Cookie missing/Token in blacklist)"
+                    )
+
+
+                if instance.requre_roles and setup_behavior["role"] not in instance.requre_roles:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Insufficient rights"
+                    )
+
+                return setup_behavior
+            return mock_call
 
         keys = [
             RoleChecker(), RoleChecker(("admin",)), RoleChecker(("admin", "reader",))
         ]
 
         for key in keys:
-            app.dependency_overrides[key] = mock_call
+            app.dependency_overrides[key] = create_mock(key)
             captured_keys.append(key)
-
-        return mock_call
-
 
 
     yield _factory
