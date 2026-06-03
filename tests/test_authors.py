@@ -121,11 +121,9 @@ async def test_create_author_anonymous_return_401(
         client: AsyncClient,
         setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn]
 ):
-    auth_behavior = HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated (Cookie missing/Token in blacklist)"
-            )
+    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token": None}
     setup_auth(auth_behavior)
+
     response = await client.post("/authors/", data={})
 
     assert response.status_code == 401
@@ -136,11 +134,7 @@ async def test_create_author_as_user_return_403(
         client: AsyncClient,
         setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn]
 ):
-    auth_behavior = HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="Insufficient rights"
-    )
-
+    auth_behavior = {"id": 1, "role": "reader", "exp": 1, "token": "at"}
     setup_auth(auth_behavior)
     response = await client.post("/authors/", json={})
     assert response.status_code == 403
@@ -150,13 +144,14 @@ async def test_create_author_as_user_return_403(
 async def test_create_author_success_201(
         client: AsyncClient,
         setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn],
-        get_test_db_session: AsyncSession
+        get_test_db_session: AsyncSession,
+        clear_authors: None
 ):
     auth_behavior = {
         "id": 1,
         "role": "admin",
         "exp": 1234,
-        "token_str": "access_token"
+        "token": "access_token"
     }
     setup_auth(auth_behavior)
 
@@ -172,22 +167,21 @@ async def test_create_author_success_201(
 
     assert response.status_code == 201
 
-    validated_data = AuthorResponse.model_validate(response.json())
+    response_validated_data = AuthorResponse.model_validate(response.json())
 
 
-    result = await get_test_db_session.execute(select(Author).where(Author.id == validated_data.id))
+    assert author_payloads['full_name'] == response_validated_data.full_name
+    assert author_payloads['country'] == response_validated_data.country
+    assert author_payloads['birth_date'] == str(response_validated_data.birth_date)
+
+    get_test_db_session.expire_all()
+    result = await get_test_db_session.execute(select(Author).where(Author.id == response_validated_data.id))
     author_db = result.scalar_one_or_none()
     assert author_db is not None
 
+    author_db_validated = AuthorResponse.model_validate(author_db)
 
-    expected_data = {
-        "id": validated_data.id,
-        "full_name": validated_data.full_name,
-        "country": validated_data.country,
-        "birth_date": validated_data.birth_date
-    }
-
-    assert validated_data.model_dump() == expected_data
+    assert response_validated_data == author_db_validated
 
 
 
@@ -234,7 +228,7 @@ async def test_create_author_invalid_payloads_422(
         "id": 1,
         "role": "admin",
         "exp": 1234,
-        "token_str": "access_token"
+        "token": "access_token"
     }
     setup_auth(auth_behavior)
 
@@ -258,11 +252,9 @@ async def test_put_author_anonymous_return_401(
         client: AsyncClient,
         setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn]
 ):
-    auth_behavior = HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated (Cookie missing/Token in blacklist)"
-            )
+    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token": None}
     setup_auth(auth_behavior)
+
     response = await client.put("/authors/1", json={})
 
     assert response.status_code == 401
@@ -273,11 +265,7 @@ async def test_put_author_as_user_return_403(
         client: AsyncClient,
         setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn]
 ):
-    auth_behavior = HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="Insufficient rights"
-    )
-
+    auth_behavior = {"id": 1, "role": "reader", "exp": 1, "token": "at"}
     setup_auth(auth_behavior)
     response = await client.put("/authors/1", json={})
     assert response.status_code == 403
@@ -329,7 +317,7 @@ async def test_put_author_invalid_payload_and_not_found_422_404(
         "id": 1,
         "role": "admin",
         "exp": 1234,
-        "token_str": "access_token"
+        "token": "access_token"
     }
     setup_auth(auth_behavior)
     if use_valid_id:
@@ -400,11 +388,9 @@ async def test_patch_author_anonymous_return_401(
         client: AsyncClient,
         setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn]
 ):
-    auth_behavior = HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated (Cookie missing/Token in blacklist)"
-            )
+    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token": None}
     setup_auth(auth_behavior)
+
     response = await client.patch("/authors/1", json={})
 
     assert response.status_code == 401
@@ -415,11 +401,7 @@ async def test_patch_author_as_user_return_403(
         client: AsyncClient,
         setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn]
 ):
-    auth_behavior = HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="Insufficient rights"
-    )
-
+    auth_behavior = {"id": 1, "role": "reader", "exp": 1, "token": "at"}
     setup_auth(auth_behavior)
     response = await client.patch("/authors/1", json={})
     assert response.status_code == 403
@@ -490,8 +472,6 @@ async def test_path_author_invalid_payload_and_not_found_422_404(
 
     response = await client.patch(f"/authors/{target_id}", json=patch_payload)
 
-    errors = response.json()['detail']
-
 
     assert response.status_code == expected_status
 
@@ -502,6 +482,7 @@ async def test_path_author_invalid_payload_and_not_found_422_404(
                 loc_name in err['loc'] and err['type'] == expected_err_type[i] for err in errors
             )
             assert error_found, f"Не найдена ошибка для поля '{loc_name}'"
+
 
 @pytest.mark.parametrize(
     "patch_payload",
@@ -558,11 +539,9 @@ async def test_delete_author_anonymous_return_401(
         client: AsyncClient,
         setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn]
 ):
-    auth_behavior = HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated (Cookie missing/Token in blacklist)"
-            )
+    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token": None}
     setup_auth(auth_behavior)
+
     response = await client.delete("/authors/1")
 
     assert response.status_code == 401
@@ -573,26 +552,12 @@ async def test_delete_author_as_user_return_403(
         client: AsyncClient,
         setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn]
 ):
-    auth_behavior = HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="Insufficient rights"
-    )
-
+    auth_behavior = {"id": 1, "role": "reader", "exp": 1, "token": "at"}
     setup_auth(auth_behavior)
+
     response = await client.delete("/authors/1")
     assert response.status_code == 403
 
-
-@pytest.mark.asyncio
-async def test_delete_author_not_found_404(
-    client: AsyncClient,
-    setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn]
-):
-    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token": "access_token"}
-
-    setup_auth(auth_behavior)
-    response = await client.delete("/authors/131231")
-    assert response.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -618,3 +583,18 @@ async def test_delete_author_success_204(
 
 
     assert author_db is None
+
+
+@pytest.mark.asyncio
+async def test_delete_author_not_found_404(
+    client: AsyncClient,
+    setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn],
+    get_test_db_session: AsyncSession,
+    create_authors: list[Author]
+):
+    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token": "access_token"}
+    setup_auth(auth_behavior)
+
+    response = await client.delete("/authors/999999")
+
+    assert response.status_code == 404

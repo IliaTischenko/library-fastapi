@@ -43,8 +43,3 @@ app.include_router(auth.router)
 @app.get('/')
 def root():
     return {"message": "LibraryAPI root"}
-
-@app.get('/drop_db')
-async def drop():
-    await drop_db()
-    return {"m":"db dropped"}
