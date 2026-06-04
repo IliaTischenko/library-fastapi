@@ -189,10 +189,11 @@ async def change_pass(
             detail="Wrong old password"
         )
 
-    hashed_new_pass = get_password_hash(user_data.old_password)
+    new_hashed_pass = get_password_hash(user_data.new_password)
 
-    existing_user.hashed_pass = hashed_new_pass
+    existing_user.hashed_pass = new_hashed_pass
     await db_session.commit()
+
 
     return existing_user
 
@@ -204,7 +205,11 @@ async def change_pass(
     responses={
         404: {"description": "Юзер с указанным ID не найден"}
     })
-async def delete_admin(user_id: int, db_session: AsyncSession = Depends(get_db_session)):
+async def delete_user(
+        user_id: int,
+        db_session: AsyncSession = Depends(get_db_session),
+        payloads: dict = Depends(RoleChecker(("admin",)))
+):
     """
     Удалить юзера по указанному id, защищенный (только Администратор)
     - **user_id**: ID пользователя

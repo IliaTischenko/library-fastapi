@@ -87,4 +87,4 @@ async def logout(response: Response, payloads: dict[str, Any] = Depends(RoleChec
     )
     response.delete_cookie(key="access_token")
 
-    return {"detail": "logout success"}
+    return {"detail": "Logout success"}

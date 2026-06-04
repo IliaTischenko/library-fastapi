@@ -110,13 +110,13 @@ class RoleChecker:
         if not access_token:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Not authenticated (Cookie missing/Token in blacklist)"
+                detail="Not authenticated. (Cookie missing)"
             )
 
         if await is_token_blacklisted(access_token):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Session revoked. Please log in again."
+                detail="Session revoked. Please log in again. (Token is blacklisted)"
             )
 
 

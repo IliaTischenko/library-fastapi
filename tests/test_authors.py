@@ -3,7 +3,7 @@ from datetime import date
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
-from typing import AsyncGenerator, List, Callable, Any, NoReturn
+from typing import AsyncGenerator, List, Any
 
 from fastapi import HTTPException, status
 from sqlalchemy import select, delete
@@ -20,7 +20,6 @@ async def clear_authors(get_test_db_session: AsyncSession)  -> AsyncGenerator[No
     await get_test_db_session.commit()
 
 
-
 @pytest_asyncio.fixture(scope="function")
 async def create_authors(
         get_test_db_session: AsyncSession,
@@ -32,19 +31,15 @@ async def create_authors(
         Author(full_name="a3", country="c1", birth_date=date(1978, 5, 10))
     ]
 
-
     for author in fixed_authors:
         get_test_db_session.add(author)
-
 
     await get_test_db_session.commit()
 
     for author in fixed_authors:
         await get_test_db_session.refresh(author)
 
-
     return fixed_authors
-
 
 
 @pytest.mark.parametrize(
@@ -67,14 +62,11 @@ async def test_get_authors_filtered_200(
         expected_names: tuple[str],
         create_authors: list[Author]
 ):
-
     response = await client.get("/authors/", params=filter_param)
     assert response.status_code == 200
 
     response_data = response.json()
     assert len(response_data) == len(expected_names)
-
-
 
     received_names = sorted([author["full_name"] for author in response_data])
     expected_authors_name = sorted(
@@ -92,7 +84,6 @@ async def test_get_author_detail_200(
 ):
     target_author = create_authors[0]
 
-
     response = await client.get(f"/authors/{target_author.id}")
     assert response.status_code == 200
 
@@ -107,6 +98,7 @@ async def test_get_author_detail_200(
 
     assert validate_data.model_dump() == expected_data
 
+
 @pytest.mark.asyncio
 async def test_get_author_detail_not_found_404(
     client: AsyncClient,
@@ -115,13 +107,12 @@ async def test_get_author_detail_not_found_404(
     response = await client.get(f"/authors/312423431")
     assert response.status_code == 404
 
-
 @pytest.mark.asyncio
 async def test_create_author_anonymous_return_401(
         client: AsyncClient,
-        setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn]
+        setup_auth
 ):
-    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token": None}
+    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": None}
     setup_auth(auth_behavior)
 
     response = await client.post("/authors/", data={})
@@ -132,9 +123,9 @@ async def test_create_author_anonymous_return_401(
 @pytest.mark.asyncio
 async def test_create_author_as_user_return_403(
         client: AsyncClient,
-        setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn]
+        setup_auth
 ):
-    auth_behavior = {"id": 1, "role": "reader", "exp": 1, "token": "at"}
+    auth_behavior = {"id": 1, "role": "reader", "exp": 1, "token_str": "at"}
     setup_auth(auth_behavior)
     response = await client.post("/authors/", json={})
     assert response.status_code == 403
@@ -143,7 +134,7 @@ async def test_create_author_as_user_return_403(
 @pytest.mark.asyncio
 async def test_create_author_success_201(
         client: AsyncClient,
-        setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn],
+        setup_auth,
         get_test_db_session: AsyncSession,
         clear_authors: None
 ):
@@ -151,7 +142,7 @@ async def test_create_author_success_201(
         "id": 1,
         "role": "admin",
         "exp": 1234,
-        "token": "access_token"
+        "token_str": "access_token"
     }
     setup_auth(auth_behavior)
 
@@ -161,14 +152,11 @@ async def test_create_author_success_201(
         "birth_date": "1978-05-10"
     }
 
-
     response = await client.post("/authors/", json=author_payloads)
-
 
     assert response.status_code == 201
 
     response_validated_data = AuthorResponse.model_validate(response.json())
-
 
     assert author_payloads['full_name'] == response_validated_data.full_name
     assert author_payloads['country'] == response_validated_data.country
@@ -182,7 +170,6 @@ async def test_create_author_success_201(
     author_db_validated = AuthorResponse.model_validate(author_db)
 
     assert response_validated_data == author_db_validated
-
 
 
 @pytest.mark.parametrize(
@@ -205,19 +192,34 @@ async def test_create_author_success_201(
          ),
         #4.Превышена допустимая длинна имени/страны
         ({
-             "full_name": "Viktor Blood 123456789012345679",
-             "country": "RU12345678901234561234567890123456797",
-             "birth_date": "1980-01-01"
+        "full_name": "Viktor Blood 123456789012345679",
+        "country": "RU12345678901234561234567890123456797",
+        "birth_date": "1980-01-01"
          },
          ("full_name", "country"),
          ("string_too_long", "string_too_long")
-         )
+         ),
+        #5.Отсутствует поле full_name
+        ({"country": "RU", "birth_date": "1980-01-01"},
+         ("full_name",),
+         ("missing",)
+         ),
+        #6.Отсутствует поле country
+        ({"full_name": "Viktor Blood", "birth_date": "1980-01-01"},
+         ("country",),
+         ("missing",)
+         ),
+        #6.Отсутствует birth_date
+        ({"full_name": "Viktor Blood","country": "RU"},
+         ("birth_date",),
+         ("missing",)
+         ),
     ]
 )
 @pytest.mark.asyncio
 async def test_create_author_invalid_payloads_422(
         client: AsyncClient,
-        setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn],
+        setup_auth,
         get_test_db_session: AsyncSession,
         invalid_payload: dict[str, Any],
         expected_errors_loc: list[str],
@@ -228,7 +230,7 @@ async def test_create_author_invalid_payloads_422(
         "id": 1,
         "role": "admin",
         "exp": 1234,
-        "token": "access_token"
+        "token_str": "access_token"
     }
     setup_auth(auth_behavior)
 
@@ -237,7 +239,6 @@ async def test_create_author_invalid_payloads_422(
     assert response.status_code == 422
 
     error_data = response.json()['detail']
-
     for i, loc_name in enumerate(expected_errors_loc):
         error_found = any(
                loc_name in err['loc'] and expected_errors_type[i] == err['type'] for err in error_data
@@ -246,13 +247,12 @@ async def test_create_author_invalid_payloads_422(
         assert error_found, f"Error not found for field {loc_name} with type {expected_errors_type[i]}"
 
 
-
 @pytest.mark.asyncio
 async def test_put_author_anonymous_return_401(
         client: AsyncClient,
-        setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn]
+        setup_auth
 ):
-    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token": None}
+    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": None}
     setup_auth(auth_behavior)
 
     response = await client.put("/authors/1", json={})
@@ -263,9 +263,9 @@ async def test_put_author_anonymous_return_401(
 @pytest.mark.asyncio
 async def test_put_author_as_user_return_403(
         client: AsyncClient,
-        setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn]
+        setup_auth
 ):
-    auth_behavior = {"id": 1, "role": "reader", "exp": 1, "token": "at"}
+    auth_behavior = {"id": 1, "role": "reader", "exp": 1, "token_str": "at"}
     setup_auth(auth_behavior)
     response = await client.put("/authors/1", json={})
     assert response.status_code == 403
@@ -274,7 +274,7 @@ async def test_put_author_as_user_return_403(
 @pytest.mark.parametrize(
     "use_valid_id, put_payload, expected_status, expected_errors_loc, expected_errors_type",
     [
-        #1. Отсутствует full_name
+        #1. Невалидный full_name <1
         (
             True,
             {"full_name": "", "country": "RU", "birth_date": "1980-01-01"},
@@ -282,7 +282,7 @@ async def test_put_author_as_user_return_403(
             ("full_name",),
             ("string_too_short",)
          ),
-        #2. Отсутствует full_name и country
+        #2. Невалидный full_name и country
         (
             True,
             {"full_name": "", "country": "", "birth_date": "1980-01-01"},
@@ -298,12 +298,36 @@ async def test_put_author_as_user_return_403(
             (),
             ()
          ),
+        # 5.Отсутствует поле full_name
+        (
+            True,
+            {"country": "RU", "birth_date": "1980-01-01"},
+            422,
+            ("full_name",),
+            ("missing",)
+        ),
+        # 6.Отсутствует поле country
+        (
+            True,
+            {"full_name": "Viktor Blood", "birth_date": "1980-01-01"},
+            422,
+            ("country",),
+            ("missing",)
+        ),
+        # 6.Отсутствует birth_date
+        (
+            True,
+            {"full_name": "Viktor Blood", "country": "RU"},
+            422,
+            ("birth_date",),
+            ("missing",)
+        ),
     ]
 )
 @pytest.mark.asyncio
 async def test_put_author_invalid_payload_and_not_found_422_404(
         client: AsyncClient,
-        setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn],
+        setup_auth,
         get_test_db_session: AsyncSession,
         create_authors: list[Author],
         use_valid_id: bool,
@@ -317,7 +341,7 @@ async def test_put_author_invalid_payload_and_not_found_422_404(
         "id": 1,
         "role": "admin",
         "exp": 1234,
-        "token": "access_token"
+        "token_str": "access_token"
     }
     setup_auth(auth_behavior)
     if use_valid_id:
@@ -340,15 +364,14 @@ async def test_put_author_invalid_payload_and_not_found_422_404(
             assert error_found, f"Error not found for field {loc_name} with type {expected_errors_type[i]}"
 
 
-
 @pytest.mark.asyncio
 async def test_put_author_success_201(
         client: AsyncClient,
-        setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn],
+        setup_auth,
         create_authors: list[Author],
         get_test_db_session: AsyncSession,
 ):
-    auth_behavior = {"id": 2, "role": "admin", "exp": 1, "token": "access_token"}
+    auth_behavior = {"id": 2, "role": "admin", "exp": 1, "token_str": "access_token"}
     setup_auth(auth_behavior)
 
     target = create_authors[0]
@@ -378,17 +401,12 @@ async def test_put_author_success_201(
     assert author_db.birth_date == response_data.birth_date
 
 
-
-
-
-
-
 @pytest.mark.asyncio
 async def test_patch_author_anonymous_return_401(
         client: AsyncClient,
-        setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn]
+        setup_auth
 ):
-    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token": None}
+    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": None}
     setup_auth(auth_behavior)
 
     response = await client.patch("/authors/1", json={})
@@ -399,9 +417,9 @@ async def test_patch_author_anonymous_return_401(
 @pytest.mark.asyncio
 async def test_patch_author_as_user_return_403(
         client: AsyncClient,
-        setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn]
+        setup_auth
 ):
-    auth_behavior = {"id": 1, "role": "reader", "exp": 1, "token": "at"}
+    auth_behavior = {"id": 1, "role": "reader", "exp": 1, "token_str": "at"}
     setup_auth(auth_behavior)
     response = await client.patch("/authors/1", json={})
     assert response.status_code == 403
@@ -417,7 +435,7 @@ async def test_patch_author_as_user_return_403(
          (),
          ()
          ),
-        #Автор существует, изменённое поле не валидно
+        #Автор существует ,поле full_name не валидно
         (
             True,
             {"full_name": ""}, #<1
@@ -425,7 +443,7 @@ async def test_patch_author_as_user_return_403(
             ("full_name",),
             ("string_too_short",)
         ),
-        #Автор существует, изменённое поле не валидно
+        #Автор существует, поле full_name не валидно
         (
             True,
             {"full_name": "a" * 35},  # >30
@@ -441,7 +459,7 @@ async def test_patch_author_as_user_return_403(
             ("country",),
             ("string_too_short",)
         ),
-        #Автор существует, cломали формат даты -> 422
+        #Автор существует, невалидный формат даты -> 422
         (
             True,
             {"birth_date": "not-a-date"},
@@ -454,7 +472,7 @@ async def test_patch_author_as_user_return_403(
 @pytest.mark.asyncio
 async def test_path_author_invalid_payload_and_not_found_422_404(
         client: AsyncClient,
-        setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn],
+        setup_auth,
         create_authors: list[Author],
         use_valid_id: bool,
         patch_payload: dict[str],
@@ -462,7 +480,7 @@ async def test_path_author_invalid_payload_and_not_found_422_404(
         expected_err_loc: str,
         expected_err_type: str
 ):
-    auth_behavior = {"id": 1, "role":"admin", "exp":123, "token": "access_token"}
+    auth_behavior = {"id": 1, "role":"admin", "exp":123, "token_str": "access_token"}
     setup_auth(auth_behavior)
 
     if use_valid_id:
@@ -471,7 +489,6 @@ async def test_path_author_invalid_payload_and_not_found_422_404(
         target_id = 88888
 
     response = await client.patch(f"/authors/{target_id}", json=patch_payload)
-
 
     assert response.status_code == expected_status
 
@@ -495,12 +512,12 @@ async def test_path_author_invalid_payload_and_not_found_422_404(
 @pytest.mark.asyncio
 async def test_patch_author_success_201(
         client: AsyncClient,
-        setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn],
+        setup_auth,
         create_authors: list[Author],
         get_test_db_session: AsyncSession,
         patch_payload: dict['str']
 ):
-    auth_behavior = {"id": 2, "role": "admin", "exp": 1, "token": "access_token"}
+    auth_behavior = {"id": 2, "role": "admin", "exp": 1, "token_str": "access_token"}
     setup_auth(auth_behavior)
 
     target = create_authors[0]
@@ -522,7 +539,6 @@ async def test_patch_author_success_201(
         assert pydantic_val == patch_payload[key],\
             f"Поле {key} не совпадает: Отправленное: {type(patch_payload[key])}, Ответ: {type(pydantic_val)}"
 
-
     get_test_db_session.expire_all()
 
     author_db = await get_test_db_session.get(Author, target_id)
@@ -537,9 +553,9 @@ async def test_patch_author_success_201(
 @pytest.mark.asyncio
 async def test_delete_author_anonymous_return_401(
         client: AsyncClient,
-        setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn]
+        setup_auth
 ):
-    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token": None}
+    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": None}
     setup_auth(auth_behavior)
 
     response = await client.delete("/authors/1")
@@ -550,24 +566,23 @@ async def test_delete_author_anonymous_return_401(
 @pytest.mark.asyncio
 async def test_delete_author_as_user_return_403(
         client: AsyncClient,
-        setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn]
+        setup_auth
 ):
-    auth_behavior = {"id": 1, "role": "reader", "exp": 1, "token": "at"}
+    auth_behavior = {"id": 1, "role": "reader", "exp": 1, "token_str": "at"}
     setup_auth(auth_behavior)
 
     response = await client.delete("/authors/1")
     assert response.status_code == 403
 
 
-
 @pytest.mark.asyncio
 async def test_delete_author_success_204(
     client: AsyncClient,
-    setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn],
+    setup_auth,
     get_test_db_session: AsyncSession,
     create_authors: list[Author]
 ):
-    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token": "access_token"}
+    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": "access_token"}
     setup_auth(auth_behavior)
 
     target = create_authors[0]
@@ -588,11 +603,11 @@ async def test_delete_author_success_204(
 @pytest.mark.asyncio
 async def test_delete_author_not_found_404(
     client: AsyncClient,
-    setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn],
+    setup_auth,
     get_test_db_session: AsyncSession,
     create_authors: list[Author]
 ):
-    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token": "access_token"}
+    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": "access_token"}
     setup_auth(auth_behavior)
 
     response = await client.delete("/authors/999999")

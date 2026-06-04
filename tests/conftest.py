@@ -14,7 +14,7 @@ from app.database import Base, get_db_session
 
 DATABASE_URL = f"postgresql+asyncpg://postgres:postgres@test_db:5432/library_test"
 
-
+pytest_plugins = ["tests.test_books", "tests.test_users"]
 
 @pytest_asyncio.fixture(scope="session")
 async def test_engine() -> AsyncGenerator[AsyncEngine, None]:
@@ -68,7 +68,7 @@ def setup_auth() -> Iterator[Callable[[dict[str, Any]], dict[str, Any] | NoRetur
     def _factory(setup_behavior):
         def create_mock(instance: RoleChecker):
             async def mock_call(access_token: str | None = None) -> dict[str, Any] | NoReturn:
-                if not setup_behavior["token"]:
+                if not setup_behavior["token_str"]:
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="Not authenticated (Cookie missing/Token in blacklist)"
