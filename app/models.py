@@ -55,7 +55,11 @@ class Reader(Base):
     )
     register_date: Mapped[date] = mapped_column(nullable=False)
 
-    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=False, unique=True)
+    user_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True
+    )
     user: Mapped[Optional["User"]] = relationship("User")
 
 

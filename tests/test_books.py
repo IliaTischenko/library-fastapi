@@ -1,16 +1,15 @@
 from datetime import date
-from typing import AsyncGenerator, Callable, Any, NoReturn
+from typing import AsyncGenerator, Any
 import pytest
 import pytest_asyncio
 
-from fastapi import HTTPException, status
 from httpx import AsyncClient
 from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Author, Book
-from app.schemas import BookResponse, AuthorResponse
+from app.schemas import BookResponse
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -36,7 +35,6 @@ async def create_books(
     await get_test_db_session.refresh(author_1)
     await get_test_db_session.refresh(author_2)
 
-
     book_1 = Book(title="b1", author_id=author_1.id, pages=10)
     book_2 = Book(title="b2", author_id=author_1.id, pages=10)
     book_3 = Book(title="b3", author_id=author_2.id, pages=10)
@@ -61,7 +59,6 @@ async def create_books(
     refreshed_books = result.scalars().all()
 
     return list(refreshed_books)
-
 
 
 @pytest.mark.parametrize(
@@ -90,7 +87,6 @@ async def test_get_book_filtered_200(
     response_data = response.json()
 
     assert len(response_data) == len(expected_titles)
-
 
     response_titles = sorted([book['title'] for book in response_data])
     assert sorted(expected_titles) == response_titles
@@ -124,14 +120,13 @@ async def test_get_book_detail_200(
     assert expected_data == response_data.model_dump()
 
 
-
 @pytest.mark.asyncio
 async def create_book_anonymous_return_401(
         client: AsyncClient,
-        setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn],
+        setup_auth
 ):
 
-    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token": None}
+    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": None}
     setup_auth(auth_behavior)
 
     response = await client.post("/books/", json=())
@@ -142,9 +137,9 @@ async def create_book_anonymous_return_401(
 @pytest.mark.asyncio
 async def test_create_book_as_user_return_403(
         client: AsyncClient,
-        setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn],
+        setup_auth
     ):
-    auth_behavior = {"id": 1, "role": "reader", "exp": 1, "token": "At"}
+    auth_behavior = {"id": 1, "role": "reader", "exp": 1, "token_str": "At"}
     setup_auth(auth_behavior)
 
     response = await client.post("/books/", json=())
@@ -157,29 +152,35 @@ async def test_create_book_as_user_return_403(
     (
         #Несуществующий автор
         ({"title": "b1", "author_id": 999999, "pages": 12}, 404, "", ""),
-        #Отсутствует title
+        #Пустой title
         ({"title": "", "author_id": 1, "pages": 12}, 422, "title", "string_too_short"),
         #Некорректный title >30
         ({"title": "b" * 40, "author_id": 1, "pages": 12}, 422, "title", "string_too_long"),
-        #Отсутствует author_id
+        #Пустой author_id
         ({"title": "b1", "author_id": "", "pages": 12}, 422, "author_id", "int_parsing"),
         #Некорректный author_id < 0
         ({"title": "b1", "author_id": -1, "pages": 12}, 422, "author_id", "greater_than_equal"),
         #Некорректный pages < 1
         ({"title": "b1", "author_id": 1, "pages": -12}, 422, "pages", "greater_than_equal"),
+        #Отсутствует поле title
+        ({"author_id": 1, "pages": 12}, 422, "title", "missing"),
+        # Отсутствует поле author_id
+        ({"title": "b1", "pages": -12}, 422, "author_id", "missing"),
+        # Отсутствует поле pages
+        ({"title": "b1", "author_id": 1}, 422, "pages", "missing"),
     )
 )
 @pytest.mark.asyncio
 async def test_create_book_invalid_payloads_404_422(
         client: AsyncClient,
-        setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn],
+        setup_auth,
         get_test_db_session: AsyncSession,
         invalid_payload: dict[str, Any],
         expected_status: int,
         expected_error_loc: list[str],
         expected_error_type: list[str]
 ):
-    auth_behavior = {"id": 1, "role": "admin", "exp":1, "token": "at"}
+    auth_behavior = {"id": 1, "role": "admin", "exp":1, "token_str": "at"}
     setup_auth(auth_behavior)
 
     response = await client.post("/books/", json=invalid_payload)
@@ -191,16 +192,13 @@ async def test_create_book_invalid_payloads_404_422(
         assert expected_error_loc in error_response_data['loc'] and error_response_data['type'] == expected_error_type
 
 
-
-
-
 @pytest.mark.asyncio
 async def test_create_book_success_201(
         client: AsyncClient,
-        setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn],
+        setup_auth,
         get_test_db_session: AsyncSession
 ):
-    auth_behavior = {"id": 1, "role": "admin", "exp":1, "token": "at"}
+    auth_behavior = {"id": 1, "role": "admin", "exp":1, "token_str": "at"}
     setup_auth(auth_behavior)
 
     author_db = Author(full_name="a1", country="c1", birth_date=date(1999, 10, 11))
@@ -239,9 +237,9 @@ async def test_create_book_success_201(
 @pytest.mark.asyncio
 async def test_put_book_anonymous_return_401(
         client: AsyncClient,
-        setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn]
+        setup_auth
 ):
-    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token": None}
+    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": None}
     setup_auth(auth_behavior)
 
     response = await client.put("/books/1", json={})
@@ -252,9 +250,9 @@ async def test_put_book_anonymous_return_401(
 @pytest.mark.asyncio
 async def test_put_book_as_user_return_403(
         client: AsyncClient,
-        setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn]
+        setup_auth
 ):
-    auth_behavior = {"id": 1, "role": "reader", "exp": 1, "token": "at"}
+    auth_behavior = {"id": 1, "role": "reader", "exp": 1, "token_str": "at"}
     setup_auth(auth_behavior)
 
     response = await client.put("/books/1", json={})
@@ -265,10 +263,10 @@ async def test_put_book_as_user_return_403(
 async def test_put_book_success_201(
         client: AsyncClient,
         get_test_db_session: AsyncSession,
-        setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn],
+        setup_auth,
         create_books: list[Book]
 ):
-    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token": "at"}
+    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": "at"}
     setup_auth(auth_behavior)
     target_id = create_books[0].id
     new_author_id = create_books[2].author_id
@@ -297,9 +295,7 @@ async def test_put_book_success_201(
 
     db_book_validated = BookResponse.model_validate(db_book)
 
-
     assert db_book_validated == response_validated
-
 
 
 @pytest.mark.parametrize(
@@ -319,13 +315,19 @@ async def test_put_book_success_201(
         (True, {"title": "b4", "author_id": -1, "pages": 12}, 422, "author_id", "greater_than_equal"),
         # Некорректный pages < 1
         (True, {"title": "b5", "author_id": 1, "pages": -12}, 422, "pages", "greater_than_equal"),
+        # Отсутствует поле title
+        (True, {"author_id": 1, "pages": 12}, 422, "title", "missing"),
+        # Отсутствует поле author_id
+        (True, {"title": "b1", "pages": -12}, 422, "author_id", "missing"),
+        # Отсутствует поле pages
+        (True, {"title": "b1", "author_id": 1}, 422, "pages", "missing"),
     )
 )
 @pytest.mark.asyncio
 async def test_put_book_invalid_payloads_422_404(
         client: AsyncClient,
         get_test_db_session: AsyncSession,
-        setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn],
+        setup_auth,
         create_books: list[Book],
         exist_book_id: bool,
         invalid_put: dict[str, Any],
@@ -333,7 +335,7 @@ async def test_put_book_invalid_payloads_422_404(
         expected_error_loc: str,
         expected_error_type: str
 ):
-    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token": "at"}
+    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": "at"}
     setup_auth(auth_behavior)
 
     if exist_book_id:
@@ -351,9 +353,9 @@ async def test_put_book_invalid_payloads_422_404(
 @pytest.mark.asyncio
 async def test_patch_book_anonymous_return_401(
         client: AsyncClient,
-        setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn]
+        setup_auth
 ):
-    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token": None}
+    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": None}
     setup_auth(auth_behavior)
     response = await client.patch("/books/1", json={})
 
@@ -363,9 +365,9 @@ async def test_patch_book_anonymous_return_401(
 @pytest.mark.asyncio
 async def test_patch_book_as_user_return_403(
         client: AsyncClient,
-        setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn]
+        setup_auth
 ):
-    auth_behavior = {"id": 1, "role": "reader", "exp": 1, "token": "at"}
+    auth_behavior = {"id": 1, "role": "reader", "exp": 1, "token_str": "at"}
     setup_auth(auth_behavior)
 
 
@@ -377,10 +379,10 @@ async def test_patch_book_as_user_return_403(
 async def test_patch_book_success_200(
 client: AsyncClient,
         get_test_db_session: AsyncSession,
-        setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn],
+        setup_auth,
         create_books: list[Book]
 ):
-    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token": "at"}
+    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": "at"}
     setup_auth(auth_behavior)
 
 
@@ -436,7 +438,7 @@ client: AsyncClient,
 async def test_patch_book_invalid_payloads_422_404(
         client: AsyncClient,
         get_test_db_session: AsyncSession,
-        setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn],
+        setup_auth,
         create_books: list[Book],
         exist_book_id: bool,
         invalid_patch: dict[str, Any],
@@ -444,7 +446,7 @@ async def test_patch_book_invalid_payloads_422_404(
         expected_error_loc: str,
         expected_error_type: str
 ):
-    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token": "at"}
+    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": "at"}
     setup_auth(auth_behavior)
 
     if exist_book_id:
@@ -462,9 +464,9 @@ async def test_patch_book_invalid_payloads_422_404(
 @pytest.mark.asyncio
 async def test_delete_book_anonymous_return_401(
         client: AsyncClient,
-        setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn]
+        setup_auth
 ):
-    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token": None}
+    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": None}
     setup_auth(auth_behavior)
     response = await client.delete("/books/1")
 
@@ -474,10 +476,10 @@ async def test_delete_book_anonymous_return_401(
 @pytest.mark.asyncio
 async def test_delete_book_as_user_return_403(
         client: AsyncClient,
-        setup_auth: Callable[[dict[str, Any]], dict[str, Any] | NoReturn]
+        setup_auth
 ):
 
-    auth_behavior = {"id": 1, "role": "reader", "exp": 1, "token": "access_token"}
+    auth_behavior = {"id": 1, "role": "reader", "exp": 1, "token_str": "access_token"}
     setup_auth(auth_behavior)
     response = await client.delete("/books/1")
     assert response.status_code == 403
@@ -486,11 +488,11 @@ async def test_delete_book_as_user_return_403(
 @pytest.mark.asyncio
 async def test_delete_book_success_204(
     client: AsyncClient,
-    setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn],
+    setup_auth,
     get_test_db_session: AsyncSession,
     create_books: list[Book]
 ):
-    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token": "access_token"}
+    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": "access_token"}
     setup_auth(auth_behavior)
 
     target = create_books[0]
@@ -511,11 +513,11 @@ async def test_delete_book_success_204(
 @pytest.mark.asyncio
 async def test_delete_book_not_found_404(
     client: AsyncClient,
-    setup_auth: Callable[[HTTPException | dict[str, Any]], dict[str, Any] | NoReturn],
+    setup_auth,
     get_test_db_session: AsyncSession,
-    create_books: list[Author]
+    create_books: list[Book]
 ):
-    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token": "access_token"}
+    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": "access_token"}
     setup_auth(auth_behavior)
 
     response = await client.delete("/books/999999")
