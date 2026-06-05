@@ -1,11 +1,9 @@
 from datetime import date
-
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
 from typing import AsyncGenerator, List, Any
 
-from fastapi import HTTPException, status
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,7 +19,7 @@ async def clear_authors(get_test_db_session: AsyncSession)  -> AsyncGenerator[No
 
 
 @pytest_asyncio.fixture(scope="function")
-async def create_authors(
+async def fixed_authors(
         get_test_db_session: AsyncSession,
         clear_authors: None
 ) -> List[Author]:
@@ -60,49 +58,53 @@ async def test_get_authors_filtered_200(
         client: AsyncClient,
         filter_param: dict[str, str],
         expected_names: tuple[str],
-        create_authors: list[Author]
+        fixed_authors: list[Author]
 ):
     response = await client.get("/authors/", params=filter_param)
     assert response.status_code == 200
 
-    response_data = response.json()
-    assert len(response_data) == len(expected_names)
+    list_validate_response = [AuthorResponse.model_validate(author) for author in response.json()]
 
-    received_names = sorted([author["full_name"] for author in response_data])
-    expected_authors_name = sorted(
-        author.full_name for author in create_authors if author.full_name in expected_names
+    assert len(list_validate_response) == len(expected_names)
+
+    sorted_response_names = sorted([author.full_name for author in list_validate_response])
+    sorted_expected_names = sorted(
+        author.full_name for author in fixed_authors if author.full_name in expected_names
     )
 
-    assert received_names == expected_authors_name
+    assert sorted_response_names == sorted_expected_names
+
+    expected_authors_from_db = [author for author in fixed_authors if author.full_name in expected_names]
+
+    expected_authors_from_db.sort(key=lambda a: a.full_name)
+    list_validate_response.sort(key=lambda a: a.full_name)
+
+    for resp_author, db_author in zip(list_validate_response, expected_authors_from_db):
+        assert resp_author.full_name == db_author.full_name
+        assert resp_author.id == db_author.id
+        assert resp_author.country == db_author.country
+        assert resp_author.birth_date == db_author.birth_date
 
 
 @pytest.mark.asyncio
 async def test_get_author_detail_200(
     client: AsyncClient,
-    create_authors: list[Author],
+    fixed_authors: list[Author],
     get_test_db_session: AsyncSession
 ):
-    target_author = create_authors[0]
+    target_author = fixed_authors[0]
 
     response = await client.get(f"/authors/{target_author.id}")
     assert response.status_code == 200
 
     validate_data = AuthorResponse.model_validate(response.json())
 
-    expected_data = {
-        "id": target_author.id,
-        "full_name": target_author.full_name,
-        "country": target_author.country,
-        "birth_date": target_author.birth_date
-    }
-
-    assert validate_data.model_dump() == expected_data
+    assert AuthorResponse.model_validate(target_author) == validate_data
 
 
 @pytest.mark.asyncio
 async def test_get_author_detail_not_found_404(
-    client: AsyncClient,
-    create_authors: list[Author]
+    client: AsyncClient
 ):
     response = await client.get(f"/authors/312423431")
     assert response.status_code == 404
@@ -110,6 +112,7 @@ async def test_get_author_detail_not_found_404(
 @pytest.mark.asyncio
 async def test_create_author_anonymous_return_401(
         client: AsyncClient,
+        get_test_db_session: AsyncSession,
         setup_auth
 ):
     auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": None}
@@ -119,16 +122,30 @@ async def test_create_author_anonymous_return_401(
 
     assert response.status_code == 401
 
+    get_test_db_session.expire_all()
+    result = await get_test_db_session.execute(select(Author))
+    existing_authors = result.scalars().all()
+
+    assert len(existing_authors) == 0
+
+
 
 @pytest.mark.asyncio
 async def test_create_author_as_user_return_403(
         client: AsyncClient,
+        get_test_db_session: AsyncSession,
         setup_auth
 ):
     auth_behavior = {"id": 1, "role": "reader", "exp": 1, "token_str": "at"}
     setup_auth(auth_behavior)
     response = await client.post("/authors/", json={})
     assert response.status_code == 403
+
+    get_test_db_session.expire_all()
+    result = await get_test_db_session.execute(select(Author))
+    existing_authors = result.scalars().all()
+
+    assert len(existing_authors) == 0
 
 
 @pytest.mark.asyncio
@@ -247,28 +264,69 @@ async def test_create_author_invalid_payloads_422(
         assert error_found, f"Error not found for field {loc_name} with type {expected_errors_type[i]}"
 
 
+
+
 @pytest.mark.asyncio
 async def test_put_author_anonymous_return_401(
         client: AsyncClient,
+        fixed_authors: list[Author],
+        get_test_db_session: AsyncSession,
         setup_auth
 ):
     auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": None}
     setup_auth(auth_behavior)
 
-    response = await client.put("/authors/1", json={})
+    old_data = {
+        "id": fixed_authors[0].id,
+        "full_name": fixed_authors[0].full_name,
+        "country": fixed_authors[0].country,
+        "birth_date": fixed_authors[0].birth_date
+    }
+
+    target_id = old_data["id"]
+
+    response = await client.put(f"/authors/{target_id}", json={})
 
     assert response.status_code == 401
+
+    get_test_db_session.expire_all()
+    existing_author = await get_test_db_session.get(Author, target_id)
+
+    assert old_data['full_name'] == existing_author.full_name
+    assert old_data['country'] == existing_author.country
+    assert old_data['birth_date'] == existing_author.birth_date
 
 
 @pytest.mark.asyncio
 async def test_put_author_as_user_return_403(
         client: AsyncClient,
+        fixed_authors: list[Author],
+        get_test_db_session: AsyncSession,
         setup_auth
 ):
     auth_behavior = {"id": 1, "role": "reader", "exp": 1, "token_str": "at"}
     setup_auth(auth_behavior)
-    response = await client.put("/authors/1", json={})
+
+
+    old_data = {
+        "id": fixed_authors[0].id,
+        "full_name": fixed_authors[0].full_name,
+        "country": fixed_authors[0].country,
+        "birth_date": fixed_authors[0].birth_date
+    }
+
+    target_id = old_data["id"]
+
+    response = await client.put(f"/authors/{target_id}", json={})
+
     assert response.status_code == 403
+
+    get_test_db_session.expire_all()
+    existing_author = await get_test_db_session.get(Author, target_id)
+
+    assert old_data['full_name'] == existing_author.full_name
+    assert old_data['country'] == existing_author.country
+    assert old_data['birth_date'] == existing_author.birth_date
 
 
 @pytest.mark.parametrize(
@@ -329,7 +387,7 @@ async def test_put_author_invalid_payload_and_not_found_422_404(
         client: AsyncClient,
         setup_auth,
         get_test_db_session: AsyncSession,
-        create_authors: list[Author],
+        fixed_authors: list[Author],
         use_valid_id: bool,
         put_payload: dict[str, Any],
         expected_status: int,
@@ -345,7 +403,7 @@ async def test_put_author_invalid_payload_and_not_found_422_404(
     }
     setup_auth(auth_behavior)
     if use_valid_id:
-        id_author = create_authors[0].id
+        id_author = fixed_authors[0].id
     else:
         id_author = 99999
 
@@ -368,13 +426,13 @@ async def test_put_author_invalid_payload_and_not_found_422_404(
 async def test_put_author_success_201(
         client: AsyncClient,
         setup_auth,
-        create_authors: list[Author],
+        fixed_authors: list[Author],
         get_test_db_session: AsyncSession,
 ):
     auth_behavior = {"id": 2, "role": "admin", "exp": 1, "token_str": "access_token"}
     setup_auth(auth_behavior)
 
-    target = create_authors[0]
+    target = fixed_authors[0]
     target_id = target.id
 
     new_payload = {
@@ -404,25 +462,63 @@ async def test_put_author_success_201(
 @pytest.mark.asyncio
 async def test_patch_author_anonymous_return_401(
         client: AsyncClient,
+        fixed_authors: list[Author],
+        get_test_db_session: AsyncSession,
         setup_auth
 ):
     auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": None}
     setup_auth(auth_behavior)
 
-    response = await client.patch("/authors/1", json={})
+    old_data = {
+        "id": fixed_authors[0].id,
+        "full_name": fixed_authors[0].full_name,
+        "country": fixed_authors[0].country,
+        "birth_date": fixed_authors[0].birth_date
+    }
+
+    target_id = old_data["id"]
+
+    response = await client.patch(f"/authors/{target_id}", json={})
 
     assert response.status_code == 401
+
+    get_test_db_session.expire_all()
+    existing_author = await get_test_db_session.get(Author, target_id)
+
+    assert old_data['full_name'] == existing_author.full_name
+    assert old_data['country'] == existing_author.country
+    assert old_data['birth_date'] == existing_author.birth_date
+
 
 
 @pytest.mark.asyncio
 async def test_patch_author_as_user_return_403(
         client: AsyncClient,
+        fixed_authors: list[Author],
+        get_test_db_session: AsyncSession,
         setup_auth
 ):
     auth_behavior = {"id": 1, "role": "reader", "exp": 1, "token_str": "at"}
     setup_auth(auth_behavior)
-    response = await client.patch("/authors/1", json={})
+
+    old_data = {
+        "id": fixed_authors[0].id,
+        "full_name": fixed_authors[0].full_name,
+        "country": fixed_authors[0].country,
+        "birth_date": fixed_authors[0].birth_date
+    }
+
+    target_id = old_data["id"]
+
+    response = await client.patch(f"/authors/{target_id}", json={})
     assert response.status_code == 403
+
+    get_test_db_session.expire_all()
+    existing_author = await get_test_db_session.get(Author, target_id)
+
+    assert old_data['full_name'] == existing_author.full_name
+    assert old_data['country'] == existing_author.country
+    assert old_data['birth_date'] == existing_author.birth_date
 
 
 @pytest.mark.parametrize(
@@ -473,7 +569,7 @@ async def test_patch_author_as_user_return_403(
 async def test_path_author_invalid_payload_and_not_found_422_404(
         client: AsyncClient,
         setup_auth,
-        create_authors: list[Author],
+        fixed_authors: list[Author],
         use_valid_id: bool,
         patch_payload: dict[str],
         expected_status: int,
@@ -484,7 +580,7 @@ async def test_path_author_invalid_payload_and_not_found_422_404(
     setup_auth(auth_behavior)
 
     if use_valid_id:
-        target_id = create_authors[0].id
+        target_id = fixed_authors[0].id
     else:
         target_id = 88888
 
@@ -513,20 +609,19 @@ async def test_path_author_invalid_payload_and_not_found_422_404(
 async def test_patch_author_success_201(
         client: AsyncClient,
         setup_auth,
-        create_authors: list[Author],
+        fixed_authors: list[Author],
         get_test_db_session: AsyncSession,
         patch_payload: dict['str']
 ):
     auth_behavior = {"id": 2, "role": "admin", "exp": 1, "token_str": "access_token"}
     setup_auth(auth_behavior)
 
-    target = create_authors[0]
+    target = fixed_authors[0]
     target_id = target.id
 
 
     response = await client.patch(f"/authors/{target_id}", json=patch_payload)
 
-    print(response.json())
     assert response.status_code == 200
 
     response_data = AuthorResponse.model_validate(response.json())
@@ -553,26 +648,40 @@ async def test_patch_author_success_201(
 @pytest.mark.asyncio
 async def test_delete_author_anonymous_return_401(
         client: AsyncClient,
+        fixed_authors: list[Author],
+        get_test_db_session: AsyncSession,
         setup_auth
 ):
     auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": None}
     setup_auth(auth_behavior)
 
-    response = await client.delete("/authors/1")
+    response = await client.delete(f"/authors/{fixed_authors[0].id}")
 
     assert response.status_code == 401
+
+    result = await get_test_db_session.execute(select(Author))
+    existing_authors = result.scalars().all()
+
+    assert len(existing_authors) == len(fixed_authors)
 
 
 @pytest.mark.asyncio
 async def test_delete_author_as_user_return_403(
         client: AsyncClient,
+        fixed_authors: list[Author],
+        get_test_db_session: AsyncSession,
         setup_auth
 ):
     auth_behavior = {"id": 1, "role": "reader", "exp": 1, "token_str": "at"}
     setup_auth(auth_behavior)
 
-    response = await client.delete("/authors/1")
+    response = await client.delete(f"/authors/{fixed_authors[0].id}")
     assert response.status_code == 403
+
+    result = await get_test_db_session.execute(select(Author))
+    existing_authors = result.scalars().all()
+
+    assert len(existing_authors) == len(fixed_authors)
 
 
 @pytest.mark.asyncio
@@ -580,22 +689,19 @@ async def test_delete_author_success_204(
     client: AsyncClient,
     setup_auth,
     get_test_db_session: AsyncSession,
-    create_authors: list[Author]
+    fixed_authors: list[Author]
 ):
     auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": "access_token"}
     setup_auth(auth_behavior)
 
-    target = create_authors[0]
+    target = fixed_authors[0]
     target_id = target.id
 
     response = await client.delete(f"/authors/{target_id}")
-
     assert response.status_code == 204
 
     get_test_db_session.expire_all()
-
     author_db = await get_test_db_session.get(Author, target_id)
-
 
     assert author_db is None
 
@@ -605,7 +711,7 @@ async def test_delete_author_not_found_404(
     client: AsyncClient,
     setup_auth,
     get_test_db_session: AsyncSession,
-    create_authors: list[Author]
+    fixed_authors: list[Author]
 ):
     auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": "access_token"}
     setup_auth(auth_behavior)
@@ -613,3 +719,10 @@ async def test_delete_author_not_found_404(
     response = await client.delete("/authors/999999")
 
     assert response.status_code == 404
+
+    result = await get_test_db_session.execute(select(Author))
+    existing_authors = result.scalars().all()
+
+    assert len(existing_authors) == len(fixed_authors)
+
+

@@ -24,7 +24,7 @@ ITEMS_PER_PAGE = 10
     summary="Получить список читателей с фильтрацией"
 )
 async def get_readers(
-        name: Optional[str] = Query(None, description="Search by reader name"),
+        full_name: Optional[str] = Query(None, description="Search by reader name"),
         book_title: Optional[str] = Query(None, description="Search reader with book title"),
         start_date: Optional[date] = Query(None, description="Search at date (to end_date)"),
         end_date: Optional[date] = Query(None, description="Search to date (at start_date)"),
@@ -32,7 +32,7 @@ async def get_readers(
         page: int = Query(default=1, ge=1)
 ):
     """
-    Получить список читателей с возможностью фильтациии, подтягивает список книг читателя(mtm связь)
+    Получить список читателей с возможностью фильтации, подтягивает список книг читателя(mtm связь)
     - **name**: поиск по имени читателя(частичное совпадение)
     - **book_title**: поиск по названию книги которую читатель брал(частичное совпадение)
     - **start_date**: поиск после указанной даты выдачи книг
@@ -41,12 +41,12 @@ async def get_readers(
     """
 
     query = select(Reader).options(selectinload(Reader.books).joinedload(Book.author), joinedload(Reader.user))
-    if name:
-        query = query.where(Reader.full_name.ilike(f"%{name}%"))
+    if full_name:
+        query = query.where(Reader.full_name.ilike(f"%{full_name}%"))
     if start_date:
-        query = query.where(Reader.issue_date >= start_date)
+        query = query.where(Reader.register_date >= start_date)
     if end_date:
-        query = query.where(Reader.issue_date <= end_date)
+        query = query.where(Reader.register_date <= end_date)
     if book_title:
         query = query.where(
             Reader.books.any(Book.title.ilike(f"{book_title}%"))
