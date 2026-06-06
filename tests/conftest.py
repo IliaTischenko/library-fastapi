@@ -14,7 +14,7 @@ from app.database import Base, get_db_session
 
 DATABASE_URL = f"postgresql+asyncpg://postgres:postgres@test_db:5432/library_test"
 
-pytest_plugins = ["tests.test_books", "tests.test_users"]
+pytest_plugins = ["tests.test_books", "tests.test_users", "tests.test_authors"]
 
 @pytest_asyncio.fixture(scope="session")
 async def test_engine() -> AsyncGenerator[AsyncEngine, None]:

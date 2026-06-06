@@ -458,33 +458,56 @@ async def test_patch_book_as_user_return_403(
     assert existing_book.pages == old_book['pages']
 
 
+@pytest.mark.parametrize(
+    "patch_payload",
+    [{
+        "title": "new_title_book",
+        "pages": 1234,
+        "author_id": 1
+    },
+    {   #Отсутствует title
+        "pages": 1234,
+        "author_id": 1
+    },
+    {   #Отсутствует pages
+        "title": "new_title_book",
+        "author_id": 1
+    },
+    {   #Отсутствует author_id
+        "title": "new_title_book",
+        "pages": 1234
+    },
+    ]
+)
 @pytest.mark.asyncio
 async def test_patch_book_success_200(
 client: AsyncClient,
         get_test_db_session: AsyncSession,
         setup_auth,
-        fixed_books: list[Book]
+        fixed_books: list[Book],
+        fixed_authors: list[Author],
+        patch_payload: dict[str, Any]
 ):
     auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": "at"}
     setup_auth(auth_behavior)
 
-
     target_id = fixed_books[2].id
-    new_author_id = fixed_books[0].author_id
 
-    book_payload = {
-        "title": "new_title_book",
-        "pages": 1234,
-        "author_id": new_author_id
-    }
 
-    response = await client.patch(f"/books/{target_id}", json=book_payload)
+
+    if patch_payload.get('author_id'):
+        patch_payload['author_id'] = fixed_authors[patch_payload['author_id']].id
+
+    response = await client.patch(f"/books/{target_id}", json=patch_payload)
 
     response_validate = BookResponse.model_validate(response.json())
 
-    assert book_payload['title'] == response_validate.title
-    assert book_payload['pages'] == response_validate.pages
-    assert book_payload['author_id'] == response_validate.author.id
+    for key in patch_payload.keys():
+        if key == 'author_id':
+            assert patch_payload[key] == response_validate.author.id
+        else:
+            assert patch_payload[key] == getattr(response_validate, key)
+
 
     get_test_db_session.expire_all()
 

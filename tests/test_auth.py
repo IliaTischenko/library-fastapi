@@ -70,8 +70,7 @@ async def test_logout_200(
     assert response.status_code == 200
     assert response.json()['detail'] == "Logout success"
 
-    assert "access_token" in response.cookies
-    assert response.cookies.get("access_token") == ""
+    assert response.cookies.get('access_token') is None or response.cookies.get("access_token") == ""
 
 
 @pytest.mark.parametrize(

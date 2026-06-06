@@ -133,14 +133,16 @@ async def put_reader(
 
     reader_dict = reader_data.model_dump()
     books_ids = reader_dict.pop("books_ids", [])
-    if books_ids:
-        result = await db_session.execute(
-            select(Book).
-            options(joinedload(Book.author)).
-            where(Book.id.in_(books_ids))
-        )
-        books = result.scalars().all()
-        db_reader.books = books
+
+
+    result = await db_session.execute(
+        select(Book).
+        options(joinedload(Book.author)).
+        where(Book.id.in_(books_ids))
+    )
+    books = result.scalars().all()
+
+    db_reader.books = books
 
 
     for key, val in reader_dict.items():
@@ -199,16 +201,19 @@ async def patch_reader(
             detail="Reader with this id is not found"
         )
 
+
     reader_dict = reader_data.model_dump(exclude_unset=True)
+
     books_ids = reader_dict.pop("books_ids", [])
-    if books_ids:
-        result = await db_session.execute(
-            select(Book).
-            options(joinedload(Book.author)).
-            where(Book.id.in_(books_ids))
-        )
-        books = result.scalars().all()
-        db_reader.books = books
+
+    result = await db_session.execute(
+        select(Book).
+        options(joinedload(Book.author)).
+        where(Book.id.in_(books_ids))
+    )
+    books = result.scalars().all()
+
+    db_reader.books = books
 
     for key, val in reader_dict.items():
         setattr(db_reader, key, val)
@@ -221,7 +226,6 @@ async def patch_reader(
         where(Reader.id == reader_id)
     )
     reader_with_relations = result.scalar_one()
-
 
     return reader_with_relations
 

@@ -423,7 +423,7 @@ async def test_put_author_invalid_payload_and_not_found_422_404(
 
 
 @pytest.mark.asyncio
-async def test_put_author_success_201(
+async def test_put_author_success_200(
         client: AsyncClient,
         setup_auth,
         fixed_authors: list[Author],
@@ -606,7 +606,7 @@ async def test_path_author_invalid_payload_and_not_found_422_404(
     ]
 )
 @pytest.mark.asyncio
-async def test_patch_author_success_201(
+async def test_patch_author_success_200(
         client: AsyncClient,
         setup_auth,
         fixed_authors: list[Author],
@@ -636,7 +636,11 @@ async def test_patch_author_success_201(
 
     get_test_db_session.expire_all()
 
-    author_db = await get_test_db_session.get(Author, target_id)
+
+    query = select(Author).where(Author.id == target_id)
+    result = await get_test_db_session.execute(query)
+    author_db = result.scalar_one_or_none()
+
     assert author_db is not None
 
     for field_name in AuthorResponse.model_fields.keys():

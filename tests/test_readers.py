@@ -1,6 +1,6 @@
 import pytest
 from datetime import date
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Any
 
 from httpx import AsyncClient
 from sqlalchemy import select, delete
@@ -210,7 +210,7 @@ async def test_put_reader_as_anonymous_401(
         get_test_db_session: AsyncSession,
         setup_auth
 ):
-    auth_behavior = {"id": 99999, "role": "reader", "exp": 123, "token_str": None}
+    auth_behavior = {"id": 99999, "role": "admin", "exp": 123, "token_str": None}
     setup_auth(auth_behavior)
 
     old_data = {
@@ -238,35 +238,411 @@ async def test_put_reader_as_anonymous_401(
     assert sorted_books_ids_from_existing_readers == sorted_books_ids_from_old_data
 
 
+@pytest.mark.parametrize(
+    "put_payload_pre",
+    [
+        ({
+            "full_name": "new_reader_name",
+            "books_indices": [0, 1],
+            "register_date": "1888-10-03"
+        }
+        ),
+        ({
+            "full_name": "new_reader_name",
+            "books_indices": [],
+            "register_date": "1888-10-03"
+        }),
+        ({
+            "full_name": "new_reader_name",
+            "books_indices": []
+        })
+    ]
+)
 @pytest.mark.asyncio
-async def test_put_reader_success_200():
-    pass
+async def test_put_reader_success_200(
+        client: AsyncClient,
+        get_test_db_session: AsyncSession,
+        fixed_readers: list[Reader],
+        fixed_books: list[Book],
+        setup_auth,
+        put_payload_pre: dict[str, Any]
+):
+    target = fixed_readers[0]
+    target_id = target.id
+
+    auth_behavior = {"id": 1, "role": "admin", "exp": 123, "token_str": "at"}
+    setup_auth(auth_behavior)
+
+    real_books_ids = [fixed_books[idx].id for idx in put_payload_pre['books_indices']]
+
+    put_payload = {
+        "full_name": put_payload_pre['full_name'],
+        "books_ids": real_books_ids
+    }
+    if put_payload_pre.get("register_date"):
+        put_payload['register_date'] = put_payload_pre['register_date']
+
+    response = await client.put(f"/readers/{target_id}", json=put_payload)
+    print(response.json())
+    assert response.status_code == 200
+
+
+    response_validate = ReaderResponse.model_validate(response.json())
+
+    actual_data = response_validate.model_dump(include={"full_name", "register_date"}, mode="json")
+    actual_books_ids = [b.id for b in response_validate.books]
+
+    assert actual_data['full_name'] == put_payload['full_name']
+    if put_payload_pre.get('register_date'):
+        assert actual_data['register_date'] == put_payload['register_date']
+    assert sorted(actual_books_ids) == sorted(put_payload['books_ids'])
+
+    get_test_db_session.expire_all()
+    query = select(Reader).where(Reader.id == target_id).options(
+        selectinload(Reader.books).selectinload(Book.author),
+        selectinload(Reader.user)
+    )
+    result = await get_test_db_session.execute(query)
+    db_reader = result.scalar_one_or_none()
+    assert db_reader is not None
+
+    validate_db_reader = ReaderResponse.model_validate(db_reader)
+
+    assert validate_db_reader == response_validate
+
+
+@pytest.mark.parametrize(
+    "invalid_payload, expected_status, expected_err_loc, expected_err_type",
+    [
+        #full_name <1
+        ({"full_name": "",
+        "books_ids": [1, 2],
+        "register_date": "1888-10-03"}, 422, "full_name", "string_too_short"),
+        # full_name >30
+        ({"full_name": "a" * 31,
+          "books_ids": [1, 2],
+          "register_date": "1888-10-03"}, 422, "full_name", "string_too_long"),
+        # full_name отсутствует
+        ({"books_ids": [1, 2],
+          "register_date": "1888-10-03"}, 422, "full_name", "missing"),
+        # books_ids < 0
+        ({"full_name": "correct_name",
+          "books_ids": [-1, 2],
+          "register_date": "1888-10-03"}, 422, "books_ids", "greater_than_equal"),
+        # books_ids отсутствует
+        ({"full_name": "correct_name",
+          "register_date": "1888-10-03"}, 422, "books_ids", "missing"),
+        # books_ids некорректны
+        ({"full_name": "correct_name",
+          "books_ids": ["1", "2"],
+          "register_date": "1888-10-03"}, 422, "books_ids", "int_type"),
+        # register_date некоректна
+        ({"full_name": "correct_name",
+          "books_ids": [1, 2],
+          "register_date": "1998-33-33"}, 422, "register_date", "date_from_datetime_parsing"),
+        # register_date пустая
+        ({"full_name": "correct_name",
+          "books_ids": [1, 2],
+          "register_date": ""}, 422, "register_date", "date_from_datetime_parsing"),
+        #reader_id не сущетсвует
+        ({
+            "full_name": "new_reader_name",
+            "books_ids": [1, 2],
+            "register_date": "1888-10-03"
+        }, 404, "", "")
+
+    ]
+)
+@pytest.mark.asyncio
+async def test_put_reader_invalid_payloads_and_not_found_422_404(
+        client: AsyncClient,
+        get_test_db_session: AsyncSession,
+        fixed_readers: list[Reader],
+        setup_auth,
+        invalid_payload: dict[str, Any],
+        expected_status: int,
+        expected_err_loc: str,
+        expected_err_type: str
+):
+    target = fixed_readers[0]
+    if expected_status == 404:
+        target_id = 99999
+    else:
+        target_id = target.id
+
+    old_data = {
+        "id": target.id,
+        "user_id": target.user_id,
+        "user": target.user,
+        "full_name": target.full_name,
+        "register_date": target.register_date,
+        "books": target.books
+    }
+
+    auth_behavior = {"id": 1, "role": "admin", "exp": 123, "token_str": "at"}
+    setup_auth(auth_behavior)
+
+
+    response = await client.put(f"/readers/{target_id}", json=invalid_payload)
+    assert response.status_code == expected_status
+
+    print(response.json())
+    if response.status_code == 422:
+        error = response.json()['detail'][0]
+
+        assert expected_err_loc in error['loc'] and expected_err_type == error['type']
+
+
+        get_test_db_session.expire_all()
+        query = select(Reader).where(Reader.id == target_id).options(
+            selectinload(Reader.books).selectinload(Book.author),
+            selectinload(Reader.user)
+        )
+        result = await get_test_db_session.execute(query)
+        db_reader = result.scalar_one_or_none()
+        assert db_reader is not None
+
+        validate_db_reader = ReaderResponse.model_validate(db_reader)
+        validate_old_data = ReaderResponse.model_validate(old_data)
+
+        assert validate_db_reader == validate_old_data
 
 
 @pytest.mark.asyncio
-async def test_put_reader_invalid_payloads_and_not_found_422_404():
-    pass
+async def test_patch_reader_as_user_no_owner_403(
+        client: AsyncClient,
+        fixed_readers: list[Reader],
+        get_test_db_session: AsyncSession,
+        setup_auth
+):
+    auth_behavior = {"id": 99999, "role": "reader", "exp": 123, "token_str": "at"}
+    setup_auth(auth_behavior)
+
+    old_data = {
+        "id": fixed_readers[0].id,
+        "user_id": fixed_readers[0].user_id,
+        "full_name": fixed_readers[0].full_name,
+        "register_date": fixed_readers[0].register_date,
+        "books_ids": [b.id for b in fixed_readers[0].books]
+    }
+    response = await client.patch(f"/readers/{old_data['id']}", json={})
+    assert response.status_code == 403
+
+    get_test_db_session.expire_all()
+    query = select(Reader).where(Reader.id == old_data['id']).options(selectinload(Reader.books))
+    result = await get_test_db_session.execute(query)
+    existing_readers = result.scalar_one()
+
+    assert existing_readers.id == old_data['id']
+    assert existing_readers.user_id == old_data['user_id']
+    assert existing_readers.full_name == old_data['full_name']
+    assert existing_readers.register_date == old_data['register_date']
+
+    sorted_books_ids_from_existing_readers = sorted([book.id for book in existing_readers.books])
+    sorted_books_ids_from_old_data = sorted(old_data['books_ids'])
+    assert sorted_books_ids_from_existing_readers == sorted_books_ids_from_old_data
+
 
 
 @pytest.mark.asyncio
-async def test_patch_reader_as_user_403():
-    pass
+async def test_patch_reader_as_anonymous_401(
+    client: AsyncClient,
+    fixed_readers: list[Reader],
+    get_test_db_session: AsyncSession,
+    setup_auth
+):
+    auth_behavior = {"id": 99999, "role": "admin", "exp": 123, "token_str": None}
+    setup_auth(auth_behavior)
+
+    old_data = {
+    "id": fixed_readers[0].id,
+    "user_id": fixed_readers[0].user_id,
+    "full_name": fixed_readers[0].full_name,
+    "register_date": fixed_readers[0].register_date,
+    "books_ids": [b.id for b in fixed_readers[0].books]
+    }
+    response = await client.put(f"/readers/{old_data['id']}", json={})
+    assert response.status_code == 401
+
+    get_test_db_session.expire_all()
+    query = select(Reader).where(Reader.id == old_data['id']).options(selectinload(Reader.books))
+    result = await get_test_db_session.execute(query)
+    existing_readers = result.scalar_one()
+
+    assert existing_readers.id == old_data['id']
+    assert existing_readers.user_id == old_data['user_id']
+    assert existing_readers.full_name == old_data['full_name']
+    assert existing_readers.register_date == old_data['register_date']
+
+    sorted_books_ids_from_existing_readers = sorted([book.id for book in existing_readers.books])
+    sorted_books_ids_from_old_data = sorted(old_data['books_ids'])
+    assert sorted_books_ids_from_existing_readers == sorted_books_ids_from_old_data
 
 
+@pytest.mark.parametrize(
+    "patch_payload_pre",
+    [
+        ({
+            "full_name": "correct_name",
+            "books_indices": [1, 2],
+            "register_date": "1987-02-05"
+        }),
+        ({
+             #full_name - отсутствует
+             "books_indices": [1, 2],
+             "register_date": "1987-02-05"
+        }),
+        ({
+             #books_ids - отсутствует
+             "full_name": "correct_name",
+             "register_date": "1987-02-05"
+        }),
+        ({# register_date - отсутствует
+             "full_name": "correct_name",
+              "books_indices": [1, 2],
+        }),
+    ]
+)
 @pytest.mark.asyncio
-async def test_patch_reader_as_anonymous_401():
-    pass
+async def test_patch_reader_success_200(
+        client: AsyncClient,
+        get_test_db_session: AsyncSession,
+        setup_auth,
+        fixed_readers: list[Reader],
+        fixed_books: list[Book],
+        patch_payload_pre: dict[str, Any]
+):
+    target = fixed_readers[0]
+    target_id = target.id
+
+    auth_behavior = {"id": 1, "role": "admin", "exp": 123, "token_str": "ac"}
+    setup_auth(auth_behavior)
+
+    patch_payload = {}
+    real_books_ids = []
+    for key in patch_payload_pre.keys():
+        if key == "books_indices":
+            real_books_ids = sorted([int(fixed_books[int(idx)].id) for idx in patch_payload_pre["books_indices"]])
+            patch_payload['books_ids'] = real_books_ids
+        patch_payload[key] =  patch_payload_pre[key]
+
+    response = await client.patch(f"/readers/{target_id}", json=patch_payload)
+    assert response.status_code == 200
+
+    validate_response = ReaderResponse.model_validate(response.json())
+
+    if patch_payload.get("full_name"):
+        assert patch_payload.get("full_name") == validate_response.full_name
+    if patch_payload.get("register_date"):
+        assert patch_payload.get("register_date") == validate_response.register_date.isoformat()
+    if patch_payload.get("books_ids"):
+        assert real_books_ids == sorted([b.id for b in validate_response.books])
 
 
+    get_test_db_session.expire_all()
+    query = select(Reader).where(Reader.id == target_id).options(
+        selectinload(Reader.books).selectinload(Book.author),
+        selectinload(Reader.user)
+    )
+    result = await get_test_db_session.execute(query)
+    db_reader = result.scalar_one_or_none()
+
+    assert db_reader is not None
+
+    validate_db_reader = ReaderResponse.model_validate(db_reader)
+
+    assert validate_db_reader == validate_response
+
+
+@pytest.mark.parametrize(
+    "invalid_payload, expected_status, expected_err_loc, expected_err_type",
+    [
+        #full_name <1
+        ({"full_name": "",
+        "books_ids": [1, 2],
+        "register_date": "1888-10-03"}, 422, "full_name", "string_too_short"),
+        # full_name >30
+        ({"full_name": "a" * 31,
+          "books_ids": [1, 2],
+          "register_date": "1888-10-03"}, 422, "full_name", "string_too_long"),
+        # books_ids < 0
+        ({"full_name": "correct_name",
+          "books_ids": [-1, 2],
+          "register_date": "1888-10-03"}, 422, "books_ids", "greater_than_equal"),
+        # books_ids некорректны
+        ({"full_name": "correct_name",
+          "books_ids": ["1", "2"],
+          "register_date": "1888-10-03"}, 422, "books_ids", "int_type"),
+        # register_date некоректна
+        ({"full_name": "correct_name",
+          "books_ids": [1, 2],
+          "register_date": "1998-33-33"}, 422, "register_date", "date_from_datetime_parsing"),
+        # register_date пустая
+        ({"full_name": "correct_name",
+          "books_ids": [1, 2],
+          "register_date": ""}, 422, "register_date", "date_from_datetime_parsing"),
+        #reader_id не сущетсвует
+        ({
+            "full_name": "new_reader_name",
+            "books_ids": [1, 2],
+            "register_date": "1888-10-03"
+        }, 404, "", "")
+
+    ]
+)
 @pytest.mark.asyncio
-async def test_patch_reader_success_200():
-    pass
+async def test_patch_reader_invalid_payloads_and_not_found_422_404(
+        client: AsyncClient,
+        get_test_db_session: AsyncSession,
+        fixed_readers: list[Reader],
+        setup_auth,
+        invalid_payload: dict[str, Any],
+        expected_status: int,
+        expected_err_loc: str,
+        expected_err_type: str
+):
+    target = fixed_readers[0]
+    if expected_status == 404:
+        target_id = 99999
+    else:
+        target_id = target.id
+
+    old_data = {
+        "id": target.id,
+        "user_id": target.user_id,
+        "user": target.user,
+        "full_name": target.full_name,
+        "register_date": target.register_date,
+        "books": target.books
+    }
+
+    auth_behavior = {"id": 1, "role": "admin", "exp": 123, "token_str": "at"}
+    setup_auth(auth_behavior)
 
 
-@pytest.mark.asyncio
-async def test_patch_reader_invalid_payloads_and_not_found_422_404():
-    pass
+    response = await client.patch(f"/readers/{target_id}", json=invalid_payload)
+    assert response.status_code == expected_status
 
+    print(response.json())
+    if response.status_code == 422:
+        error = response.json()['detail'][0]
+
+        assert expected_err_loc in error['loc'] and expected_err_type == error['type']
+
+
+        get_test_db_session.expire_all()
+        query = select(Reader).where(Reader.id == target_id).options(
+            selectinload(Reader.books).selectinload(Book.author),
+            selectinload(Reader.user)
+        )
+        result = await get_test_db_session.execute(query)
+        db_reader = result.scalar_one_or_none()
+        assert db_reader is not None
+
+        validate_db_reader = ReaderResponse.model_validate(db_reader)
+        validate_old_data = ReaderResponse.model_validate(old_data)
+
+        assert validate_db_reader == validate_old_data
 
 
 @pytest.mark.asyncio
@@ -285,7 +661,7 @@ async def test_delete_reader_as_anonymous_401():
 
 
 @pytest.mark.asyncio
-async def test_delete_reader_success_200():
+async def test_delete_reader_as_user_403():
     pass
 
 
