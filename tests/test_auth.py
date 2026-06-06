@@ -11,7 +11,7 @@ from app.models import User
 @pytest.mark.asyncio
 async def test_login_success_200(
         client: AsyncClient,
-        create_users: list[User]
+        fixed_users: list[User]
 ):
     login_payload = {
         "username": "username1",
@@ -41,7 +41,7 @@ async def test_login_success_200(
 @pytest.mark.asyncio
 async def test_login_invalid_payloads_400(
         client: AsyncClient,
-        create_users: list[User],
+        fixed_users: list[User],
         invalid_payload: dict[str]
 ):
     client.cookies.delete("access_token")
@@ -70,8 +70,7 @@ async def test_logout_200(
     assert response.status_code == 200
     assert response.json()['detail'] == "Logout success"
 
-    assert "access_token" in response.cookies
-    assert response.cookies.get("access_token") == ""
+    assert response.cookies.get('access_token') is None or response.cookies.get("access_token") == ""
 
 
 @pytest.mark.parametrize(

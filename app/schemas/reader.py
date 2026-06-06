@@ -1,9 +1,11 @@
+from typing import Annotated
 from datetime import date
 
-from pydantic import BaseModel, Field, conint, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, Strict
 
 from app.schemas import UserResponse
 
+StrictId = Annotated[int, Strict(), Field(ge=0)]
 
 class ReaderResponse(BaseModel):
     id: int
@@ -22,7 +24,7 @@ class ReaderInput(BaseModel):
         examples=['Kirill Ryabov'],
         description="Полное имя читателя"
     )
-    books_ids: list[conint(ge=0)] = Field(examples=[[0, 1]], description="список ID книг (>0)")
+    books_ids: list[StrictId] = Field(examples=[[0, 1]], description="список ID книг (>0)")
     register_date: date = Field(
         default_factory=date.today,
         description="Дата регистрации читателя в формате YYYY-MM-DD"
@@ -37,7 +39,7 @@ class ReaderUpdate(BaseModel):
         examples=['Kirill Ryabov'],
         description="Полное имя читателя"
     )
-    books_ids: list[conint(ge=0)] | None = Field(
+    books_ids: list[StrictId] | None = Field(
         default=None,
         min_length=1,
         examples=[[0, 1]],

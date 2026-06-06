@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth_utils import RoleChecker
 from app.database import get_db_session
-from app.models import Reader, Book
+from app.models import Reader, Book, UserRole
 from app.schemas import ReaderInput, ReaderUpdate, ReaderResponse
 
 
@@ -24,7 +24,7 @@ ITEMS_PER_PAGE = 10
     summary="Получить список читателей с фильтрацией"
 )
 async def get_readers(
-        name: Optional[str] = Query(None, description="Search by reader name"),
+        full_name: Optional[str] = Query(None, description="Search by reader name"),
         book_title: Optional[str] = Query(None, description="Search reader with book title"),
         start_date: Optional[date] = Query(None, description="Search at date (to end_date)"),
         end_date: Optional[date] = Query(None, description="Search to date (at start_date)"),
@@ -32,7 +32,7 @@ async def get_readers(
         page: int = Query(default=1, ge=1)
 ):
     """
-    Получить список читателей с возможностью фильтациии, подтягивает список книг читателя(mtm связь)
+    Получить список читателей с возможностью фильтации, подтягивает список книг читателя(mtm связь)
     - **name**: поиск по имени читателя(частичное совпадение)
     - **book_title**: поиск по названию книги которую читатель брал(частичное совпадение)
     - **start_date**: поиск после указанной даты выдачи книг
@@ -41,12 +41,12 @@ async def get_readers(
     """
 
     query = select(Reader).options(selectinload(Reader.books).joinedload(Book.author), joinedload(Reader.user))
-    if name:
-        query = query.where(Reader.full_name.ilike(f"%{name}%"))
+    if full_name:
+        query = query.where(Reader.full_name.ilike(f"%{full_name}%"))
     if start_date:
-        query = query.where(Reader.issue_date >= start_date)
+        query = query.where(Reader.register_date >= start_date)
     if end_date:
-        query = query.where(Reader.issue_date <= end_date)
+        query = query.where(Reader.register_date <= end_date)
     if book_title:
         query = query.where(
             Reader.books.any(Book.title.ilike(f"{book_title}%"))
@@ -133,14 +133,16 @@ async def put_reader(
 
     reader_dict = reader_data.model_dump()
     books_ids = reader_dict.pop("books_ids", [])
-    if books_ids:
-        result = await db_session.execute(
-            select(Book).
-            options(joinedload(Book.author)).
-            where(Book.id.in_(books_ids))
-        )
-        books = result.scalars().all()
-        db_reader.books = books
+
+
+    result = await db_session.execute(
+        select(Book).
+        options(joinedload(Book.author)).
+        where(Book.id.in_(books_ids))
+    )
+    books = result.scalars().all()
+
+    db_reader.books = books
 
 
     for key, val in reader_dict.items():
@@ -199,16 +201,19 @@ async def patch_reader(
             detail="Reader with this id is not found"
         )
 
+
     reader_dict = reader_data.model_dump(exclude_unset=True)
+
     books_ids = reader_dict.pop("books_ids", [])
-    if books_ids:
-        result = await db_session.execute(
-            select(Book).
-            options(joinedload(Book.author)).
-            where(Book.id.in_(books_ids))
-        )
-        books = result.scalars().all()
-        db_reader.books = books
+
+    result = await db_session.execute(
+        select(Book).
+        options(joinedload(Book.author)).
+        where(Book.id.in_(books_ids))
+    )
+    books = result.scalars().all()
+
+    db_reader.books = books
 
     for key, val in reader_dict.items():
         setattr(db_reader, key, val)
@@ -222,12 +227,11 @@ async def patch_reader(
     )
     reader_with_relations = result.scalar_one()
 
-
     return reader_with_relations
 
 
 @router.post(
-    "/readers/{reader_id}/books/{book_id}",
+    "/{reader_id}/books/{book_id}",
     response_model=ReaderResponse,
     summary="Добавить читателю книгу",
     responses={
@@ -261,7 +265,7 @@ async def add_book_to_reader(
             detail="Reader with this ID is not found"
         )
 
-    if payloads['id'] != existing_reader.user_id:
+    if payloads['role'] != UserRole.ADMIN and payloads['id'] != existing_reader.user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient rights"
@@ -299,7 +303,7 @@ async def add_book_to_reader(
 
 
 @router.delete(
-    "/readers/{reader_id}/books/{book_id}",
+    "/{reader_id}/books/{book_id}",
     response_model=ReaderResponse,
     summary="Удалить книгу у читателя",
     responses={
@@ -333,10 +337,10 @@ async def delete_book_from_reader(
             detail="Reader with this ID is not found"
         )
 
-    if payloads['id'] != existing_reader.user_id:
+    if payloads['id'] != existing_reader.user_id and payloads['role'] != UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Insufficient rights 111111"
+            detail="Insufficient rights"
         )
 
 

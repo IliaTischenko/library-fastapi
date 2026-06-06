@@ -21,7 +21,7 @@ async def clear_books(get_test_db_session: AsyncSession) -> AsyncGenerator[None,
 
 
 @pytest_asyncio.fixture(scope="function")
-async def create_books(
+async def fixed_books(
         get_test_db_session: AsyncSession,
         clear_books: None
 ) -> list[Book]:
@@ -77,27 +77,40 @@ async def create_books(
 @pytest.mark.asyncio
 async def test_get_book_filtered_200(
         client: AsyncClient,
-        create_books: list[Book],
+        fixed_books: list[Book],
         filter_params: dict[str, str],
         expected_titles: tuple[str]
 ):
     response = await client.get("/books/", params=filter_params)
     assert response.status_code == 200
 
-    response_data = response.json()
+    list_response_validate = [BookResponse.model_validate(b) for b in response.json()]
 
-    assert len(response_data) == len(expected_titles)
+    assert len(expected_titles) == len(list_response_validate)
 
-    response_titles = sorted([book['title'] for book in response_data])
-    assert sorted(expected_titles) == response_titles
+    sorted_response_titles = sorted([b.title for b in list_response_validate])
+    sorted_expected_titles = sorted(expected_titles)
+
+    assert sorted_expected_titles == sorted_response_titles
+
+    expected_books_from_db = [b for b in fixed_books if b.title in expected_titles]
+
+    expected_books_from_db.sort(key=lambda b: b.title)
+    list_response_validate.sort(key=lambda b: b.title)
+
+    for resp_book, db_book in zip(list_response_validate, expected_books_from_db):
+        assert resp_book.id == db_book.id
+        assert resp_book.title == db_book.title
+        assert resp_book.pages == db_book.pages
+        assert resp_book.author.id == db_book.author.id
 
 
 @pytest.mark.asyncio
 async def test_get_book_detail_200(
         client: AsyncClient,
-        create_books: list[Book]
+        fixed_books: list[Book]
 ):
-    target = create_books[0]
+    target = fixed_books[0]
     target_id = target.id
 
     response = await client.get(f"/books/{target_id}")
@@ -106,24 +119,14 @@ async def test_get_book_detail_200(
 
     response_data = BookResponse.model_validate(response.json())
 
-    expected_data = {
-        "id": target_id,
-        "title": target.title,
-        "pages": target.pages,
-        "author": {
-            "id": target.author.id,
-            "full_name": target.author.full_name,
-            "country": target.author.country,
-            "birth_date": target.author.birth_date
-        }
-    }
-    assert expected_data == response_data.model_dump()
+    assert BookResponse.model_validate(target) == response_data
 
 
 @pytest.mark.asyncio
 async def create_book_anonymous_return_401(
         client: AsyncClient,
-        setup_auth
+        setup_auth,
+        get_test_db_session: AsyncSession
 ):
 
     auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": None}
@@ -133,18 +136,29 @@ async def create_book_anonymous_return_401(
 
     assert response.status_code == 401
 
+    result = await get_test_db_session.execute(select(Book))
+    existing_books = result.scalars().all()
+
+    assert len(existing_books) == 0
+
 
 @pytest.mark.asyncio
 async def test_create_book_as_user_return_403(
         client: AsyncClient,
-        setup_auth
-    ):
+        setup_auth,
+        get_test_db_session: AsyncSession
+):
     auth_behavior = {"id": 1, "role": "reader", "exp": 1, "token_str": "At"}
     setup_auth(auth_behavior)
 
     response = await client.post("/books/", json=())
 
     assert response.status_code == 403
+
+    result = await get_test_db_session.execute(select(Book))
+    existing_books = result.scalars().all()
+
+    assert len(existing_books) == 0
 
 
 @pytest.mark.parametrize(
@@ -237,26 +251,60 @@ async def test_create_book_success_201(
 @pytest.mark.asyncio
 async def test_put_book_anonymous_return_401(
         client: AsyncClient,
+        fixed_books: list[Book],
+        get_test_db_session: AsyncSession,
         setup_auth
 ):
     auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": None}
     setup_auth(auth_behavior)
 
-    response = await client.put("/books/1", json={})
+    old_book = {
+        "id": fixed_books[0].id,
+        "author_id": fixed_books[0].author_id,
+        "title": fixed_books[0].title,
+        "pages": fixed_books[0].pages
+    }
+
+    response = await client.put(f"/books/{old_book['id']}", json={})
 
     assert response.status_code == 401
+
+    get_test_db_session.expire_all()
+    existing_book = await get_test_db_session.get(Book, old_book['id'])
+
+    assert existing_book.id == old_book['id']
+    assert existing_book.author_id == old_book['author_id']
+    assert existing_book.title == old_book['title']
+    assert existing_book.pages == old_book['pages']
 
 
 @pytest.mark.asyncio
 async def test_put_book_as_user_return_403(
         client: AsyncClient,
+        fixed_books: list[Book],
+        get_test_db_session: AsyncSession,
         setup_auth
 ):
     auth_behavior = {"id": 1, "role": "reader", "exp": 1, "token_str": "at"}
     setup_auth(auth_behavior)
 
-    response = await client.put("/books/1", json={})
+    old_book = {
+        "id": fixed_books[0].id,
+        "author_id": fixed_books[0].author_id,
+        "title": fixed_books[0].title,
+        "pages": fixed_books[0].pages
+    }
+
+    response = await client.put(f"/books/{old_book['id']}", json={})
     assert response.status_code == 403
+
+    get_test_db_session.expire_all()
+    existing_book = await get_test_db_session.get(Book, old_book['id'])
+
+    assert existing_book.id == old_book['id']
+    assert existing_book.author_id == old_book['author_id']
+    assert existing_book.title == old_book['title']
+    assert existing_book.pages == old_book['pages']
 
 
 @pytest.mark.asyncio
@@ -264,12 +312,12 @@ async def test_put_book_success_201(
         client: AsyncClient,
         get_test_db_session: AsyncSession,
         setup_auth,
-        create_books: list[Book]
+        fixed_books: list[Book]
 ):
     auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": "at"}
     setup_auth(auth_behavior)
-    target_id = create_books[0].id
-    new_author_id = create_books[2].author_id
+    target_id = fixed_books[0].id
+    new_author_id = fixed_books[2].author_id
 
     book_payload = {
         "title": "new_title_book",
@@ -328,7 +376,7 @@ async def test_put_book_invalid_payloads_422_404(
         client: AsyncClient,
         get_test_db_session: AsyncSession,
         setup_auth,
-        create_books: list[Book],
+        fixed_books: list[Book],
         exist_book_id: bool,
         invalid_put: dict[str, Any],
         expected_status: int,
@@ -339,7 +387,7 @@ async def test_put_book_invalid_payloads_422_404(
     setup_auth(auth_behavior)
 
     if exist_book_id:
-        target_id = create_books[0].id
+        target_id = fixed_books[0].id
     else:
         target_id = 99999
 
@@ -353,55 +401,113 @@ async def test_put_book_invalid_payloads_422_404(
 @pytest.mark.asyncio
 async def test_patch_book_anonymous_return_401(
         client: AsyncClient,
+        fixed_books: list[Book],
+        get_test_db_session: AsyncSession,
         setup_auth
 ):
     auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": None}
     setup_auth(auth_behavior)
-    response = await client.patch("/books/1", json={})
+
+    old_book = {
+        "id": fixed_books[0].id,
+        "author_id": fixed_books[0].author_id,
+        "title": fixed_books[0].title,
+        "pages": fixed_books[0].pages
+    }
+
+    response = await client.patch(f"/books/{old_book['id']}", json={})
 
     assert response.status_code == 401
+
+
+    get_test_db_session.expire_all()
+    existing_book = await get_test_db_session.get(Book, old_book['id'])
+
+    assert existing_book.id == old_book['id']
+    assert existing_book.author_id == old_book['author_id']
+    assert existing_book.title == old_book['title']
+    assert existing_book.pages == old_book['pages']
 
 
 @pytest.mark.asyncio
 async def test_patch_book_as_user_return_403(
         client: AsyncClient,
+        fixed_books: list[Book],
+        get_test_db_session: AsyncSession,
         setup_auth
 ):
     auth_behavior = {"id": 1, "role": "reader", "exp": 1, "token_str": "at"}
     setup_auth(auth_behavior)
 
+    old_book = {
+        "id": fixed_books[0].id,
+        "author_id": fixed_books[0].author_id,
+        "title": fixed_books[0].title,
+        "pages": fixed_books[0].pages
+    }
 
-    response = await client.patch("/books/1", json={})
+    response = await client.patch(f"/books/{old_book['id']}", json={})
     assert response.status_code == 403
 
+    get_test_db_session.expire_all()
+    existing_book = await get_test_db_session.get(Book, old_book['id'])
 
+    assert existing_book.id == old_book['id']
+    assert existing_book.author_id == old_book['author_id']
+    assert existing_book.title == old_book['title']
+    assert existing_book.pages == old_book['pages']
+
+
+@pytest.mark.parametrize(
+    "patch_payload",
+    [{
+        "title": "new_title_book",
+        "pages": 1234,
+        "author_id": 1
+    },
+    {   #Отсутствует title
+        "pages": 1234,
+        "author_id": 1
+    },
+    {   #Отсутствует pages
+        "title": "new_title_book",
+        "author_id": 1
+    },
+    {   #Отсутствует author_id
+        "title": "new_title_book",
+        "pages": 1234
+    },
+    ]
+)
 @pytest.mark.asyncio
 async def test_patch_book_success_200(
 client: AsyncClient,
         get_test_db_session: AsyncSession,
         setup_auth,
-        create_books: list[Book]
+        fixed_books: list[Book],
+        fixed_authors: list[Author],
+        patch_payload: dict[str, Any]
 ):
     auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": "at"}
     setup_auth(auth_behavior)
 
+    target_id = fixed_books[2].id
 
-    target_id = create_books[2].id
-    new_author_id = create_books[0].author_id
 
-    book_payload = {
-        "title": "new_title_book",
-        "pages": 1234,
-        "author_id": new_author_id
-    }
 
-    response = await client.patch(f"/books/{target_id}", json=book_payload)
+    if patch_payload.get('author_id'):
+        patch_payload['author_id'] = fixed_authors[patch_payload['author_id']].id
+
+    response = await client.patch(f"/books/{target_id}", json=patch_payload)
 
     response_validate = BookResponse.model_validate(response.json())
 
-    assert book_payload['title'] == response_validate.title
-    assert book_payload['pages'] == response_validate.pages
-    assert book_payload['author_id'] == response_validate.author.id
+    for key in patch_payload.keys():
+        if key == 'author_id':
+            assert patch_payload[key] == response_validate.author.id
+        else:
+            assert patch_payload[key] == getattr(response_validate, key)
+
 
     get_test_db_session.expire_all()
 
@@ -439,7 +545,7 @@ async def test_patch_book_invalid_payloads_422_404(
         client: AsyncClient,
         get_test_db_session: AsyncSession,
         setup_auth,
-        create_books: list[Book],
+        fixed_books: list[Book],
         exist_book_id: bool,
         invalid_patch: dict[str, Any],
         expected_status: int,
@@ -450,7 +556,7 @@ async def test_patch_book_invalid_payloads_422_404(
     setup_auth(auth_behavior)
 
     if exist_book_id:
-        target_id = create_books[0].id
+        target_id = fixed_books[0].id
     else:
         target_id = 99999
 
@@ -464,25 +570,42 @@ async def test_patch_book_invalid_payloads_422_404(
 @pytest.mark.asyncio
 async def test_delete_book_anonymous_return_401(
         client: AsyncClient,
+        fixed_books: list[Book],
+        get_test_db_session: AsyncSession,
         setup_auth
 ):
     auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": None}
     setup_auth(auth_behavior)
-    response = await client.delete("/books/1")
+    response = await client.delete(f"/books/{fixed_books[0].id}")
 
     assert response.status_code == 401
+
+    get_test_db_session.expire_all()
+    result = await get_test_db_session.execute(select(Book))
+    existing_books = result.scalars().all()
+
+    assert len(fixed_books) == len(existing_books)
 
 
 @pytest.mark.asyncio
 async def test_delete_book_as_user_return_403(
         client: AsyncClient,
+        fixed_books: list[Book],
+        get_test_db_session: AsyncSession,
         setup_auth
 ):
 
     auth_behavior = {"id": 1, "role": "reader", "exp": 1, "token_str": "access_token"}
     setup_auth(auth_behavior)
-    response = await client.delete("/books/1")
+
+    response = await client.delete(f"/books/{fixed_books[0].id}")
     assert response.status_code == 403
+
+    get_test_db_session.expire_all()
+    result = await get_test_db_session.execute(select(Book))
+    existing_books = result.scalars().all()
+
+    assert len(fixed_books) == len(existing_books)
 
 
 @pytest.mark.asyncio
@@ -490,12 +613,12 @@ async def test_delete_book_success_204(
     client: AsyncClient,
     setup_auth,
     get_test_db_session: AsyncSession,
-    create_books: list[Book]
+    fixed_books: list[Book]
 ):
     auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": "access_token"}
     setup_auth(auth_behavior)
 
-    target = create_books[0]
+    target = fixed_books[0]
     target_id = target.id
 
     response = await client.delete(f"/books/{target_id}")
@@ -515,7 +638,7 @@ async def test_delete_book_not_found_404(
     client: AsyncClient,
     setup_auth,
     get_test_db_session: AsyncSession,
-    create_books: list[Book]
+    fixed_books: list[Book]
 ):
     auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": "access_token"}
     setup_auth(auth_behavior)
@@ -523,3 +646,9 @@ async def test_delete_book_not_found_404(
     response = await client.delete("/books/999999")
 
     assert response.status_code == 404
+
+    get_test_db_session.expire_all()
+    result = await get_test_db_session.execute(select(Book))
+    existing_books = result.scalars().all()
+
+    assert len(fixed_books) == len(existing_books)

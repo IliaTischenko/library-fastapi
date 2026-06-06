@@ -22,9 +22,9 @@ async def clear_users(
 
 
 @pytest.fixture(scope="function")
-async def create_users(
+async def fixed_users(
         get_test_db_session: AsyncSession,
-        clear_users: AsyncGenerator[None, None]
+        clear_users: None
 ) -> list[User]:
     users = [
         User(username="username1", hashed_pass=get_password_hash("correct_password"), role=UserRole.ADMIN),
@@ -73,23 +73,37 @@ async def test_get_users_as_anonymous_401(
 async def test_get_users_success_200(
         client: AsyncClient,
         setup_auth,
-        create_users: list[User]
+        fixed_users: list[User]
 ):
     auth_behavior = {"id": 1, "role": "admin", "exp": 123, "token_str": "at"}
     setup_auth(auth_behavior)
-    sorted_expected_usernames = ["username1", "username2", "username3"]
+    expected_usernames = ["username1", "username2", "username3"]
 
     response = await client.get("/users/")
     assert response.status_code == 200
 
-    response_usernames = sorted([user['username'] for user in response.json()])
+    list_response_validate = [UserResponse.model_validate(u) for u in response.json()]
 
-    assert response_usernames == sorted_expected_usernames
+    assert len(list_response_validate) == len(expected_usernames)
 
+    sorted_expected_usernames = sorted(expected_usernames)
+    sorted_response_usernames = sorted([u.username for u in list_response_validate])
+
+    assert sorted_response_usernames == sorted_expected_usernames
+
+
+    fixed_users.sort(key=lambda u: u.username)
+    list_response_validate.sort(key=lambda u: u.username)
+
+    for resp_user, db_user in zip(list_response_validate, fixed_users):
+        assert resp_user.id == db_user.id
+        assert resp_user.username == db_user.username
+        assert resp_user.role == resp_user.role
 
 @pytest.mark.asyncio
 async def test_register_admin_as_user_403(
         client: AsyncClient,
+        get_test_db_session: AsyncSession,
         setup_auth,
 ):
     auth_behavior = {"id": 1, "role": "reader", "exp": 123, "token_str": "at"}
@@ -98,10 +112,18 @@ async def test_register_admin_as_user_403(
     response = await client.post("/users/register-admin", json={})
     assert response.status_code == 403
 
+    result = await get_test_db_session.execute(select(User))
+    existing_users = result.scalars().all()
+
+    assert len(existing_users) == 0
+
+
+
 
 @pytest.mark.asyncio
 async def test_register_admin_as_anonymous_401(
         client: AsyncClient,
+        get_test_db_session: AsyncSession,
         setup_auth,
 ):
     auth_behavior = {"id": 1, "role": "admin", "exp": 123, "token_str": None}
@@ -110,6 +132,11 @@ async def test_register_admin_as_anonymous_401(
     response = await client.post("/users/register-admin", json={})
 
     assert response.status_code == 401
+
+    result = await get_test_db_session.execute(select(User))
+    existing_users = result.scalars().all()
+
+    assert len(existing_users) == 0
 
 
 @pytest.mark.asyncio
@@ -205,6 +232,11 @@ async def test_register_admin_already_exists_400(
 
     assert response.status_code == 400
 
+    result = await get_test_db_session.execute(select(User))
+    existing_users = result.scalars().all()
+
+    assert len(existing_users) == 1
+
 
 @pytest.mark.parametrize(
     "user_reader_payload, is_with_books",
@@ -239,13 +271,13 @@ async def test_register_reader_success_201(
         client: AsyncClient,
         get_test_db_session: AsyncSession,
         clear_users: None,
-        create_books: list[Book],
+        fixed_books: list[Book],
         user_reader_payload: dict[Any],
         is_with_books: bool
 ):
 
     if is_with_books:
-        user_reader_payload['books_ids'] = [create_books[0].id, create_books[1].id, create_books[2].id]
+        user_reader_payload['books_ids'] = [fixed_books[0].id, fixed_books[1].id, fixed_books[2].id]
 
     response = await client.post("/users/register-reader", json=user_reader_payload)
 
@@ -296,10 +328,10 @@ async def test_register_reader_success_201(
 async def test_patch_user_success_200(
         client: AsyncClient,
         get_test_db_session: AsyncSession,
-        create_users: list[User],
+        fixed_users: list[User],
         setup_auth
 ):
-    target = create_users[0]
+    target = fixed_users[0]
     target_id = target.id
     auth_behavior = {"id": target_id, "role": target.role, "exp": 123, "token_str": "ac"}
     setup_auth(auth_behavior)
@@ -357,7 +389,7 @@ async def test_patch_user_success_200(
 async def test_patch_user_invalid_payload_422_404(
         client: AsyncClient,
         get_test_db_session: AsyncSession,
-        create_users: list[User],
+        fixed_users: list[User],
         setup_auth,
         is_user_exist: bool,
         expected_status: int,
@@ -368,7 +400,7 @@ async def test_patch_user_invalid_payload_422_404(
     if not is_user_exist:
         auth_behavior = {"id": 9999999, "role": "admin", "exp": 123, "token_str": "ac"}
     else:
-        target = create_users[0]
+        target = fixed_users[0]
         target_id = target.id
         auth_behavior = {"id": target_id, "role": "admin", "exp": 123, "token_str": "ac"}
 
@@ -386,24 +418,38 @@ async def test_patch_user_invalid_payload_422_404(
 @pytest.mark.asyncio
 async def test_delete_user_anonymous_return_401(
         client: AsyncClient,
+        fixed_users: list[User],
+        get_test_db_session: AsyncSession,
         setup_auth
 ):
     auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": None}
     setup_auth(auth_behavior)
-    response = await client.delete("/users/1")
+    response = await client.delete(f"/users/{fixed_users[0].id}")
 
     assert response.status_code == 401
+
+    result = await get_test_db_session.execute(select(User))
+    existing_users = result.scalars().all()
+
+    assert len(existing_users) == len(fixed_users)
 
 
 @pytest.mark.asyncio
 async def test_delete_user_as_user_return_403(
         client: AsyncClient,
+        fixed_users: list[User],
+        get_test_db_session: AsyncSession,
         setup_auth
 ):
     auth_behavior = {"id": 1, "role": "reader", "exp": 1, "token_str": "access_token"}
     setup_auth(auth_behavior)
-    response = await client.delete("/users/1")
+    response = await client.delete(f"/users/{fixed_users[0].id}")
     assert response.status_code == 403
+
+    result = await get_test_db_session.execute(select(User))
+    existing_users = result.scalars().all()
+
+    assert len(existing_users) == len(fixed_users)
 
 
 @pytest.mark.asyncio
@@ -411,12 +457,12 @@ async def test_delete_user_success_204(
     client: AsyncClient,
     setup_auth,
     get_test_db_session: AsyncSession,
-    create_users: list[User]
+    fixed_users: list[User]
 ):
     auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": "access_token"}
     setup_auth(auth_behavior)
 
-    target = create_users[0]
+    target = fixed_users[0]
     target_id = target.id
 
     response = await client.delete(f"/users/{target_id}")
@@ -434,7 +480,7 @@ async def test_delete_user_not_found_404(
     client: AsyncClient,
     setup_auth,
     get_test_db_session: AsyncSession,
-    create_users: list[User]
+    fixed_users: list[User]
 ):
     auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": "access_token"}
     setup_auth(auth_behavior)
@@ -442,3 +488,8 @@ async def test_delete_user_not_found_404(
     response = await client.delete("/users/999999")
 
     assert response.status_code == 404
+
+    result = await get_test_db_session.execute(select(User))
+    existing_users = result.scalars().all()
+
+    assert len(existing_users) == len(fixed_users)
