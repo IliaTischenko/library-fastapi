@@ -1,9 +1,11 @@
+from http.client import responses
+
 import pytest
 from datetime import date
 from typing import AsyncGenerator, Any
 
 from httpx import AsyncClient
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, True_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -443,7 +445,6 @@ async def test_patch_reader_as_user_no_owner_403(
     assert sorted_books_ids_from_existing_readers == sorted_books_ids_from_old_data
 
 
-
 @pytest.mark.asyncio
 async def test_patch_reader_as_anonymous_401(
     client: AsyncClient,
@@ -646,28 +647,418 @@ async def test_patch_reader_invalid_payloads_and_not_found_422_404(
 
 
 @pytest.mark.asyncio
-async def test_add_book_to_reader_success_200():
-    pass
+async def test_add_book_to_reader_success_200(
+        client: AsyncClient,
+        get_test_db_session: AsyncSession,
+        fixed_readers: list[Reader],
+        fixed_books: list[Book],
+        setup_auth
+):
+    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": "ac"}
+    setup_auth(auth_behavior)
+
+    target_reader = fixed_readers[0] #books 0,1
+    target_reader_id = target_reader.id
+    target_reader_books_ids = [b.id for b in target_reader.books]
+
+    target_book_id = fixed_books[2].id
+
+    expected_books_ids = target_reader_books_ids
+    expected_books_ids.append(target_book_id)
+
+    sorted_expected_books_ids = sorted(expected_books_ids)
+
+    response = await client.post(f"/readers/{target_reader_id}/books/{target_book_id}")
+    assert response.status_code == 200
+
+    validated_response = ReaderResponse.model_validate(response.json())
+
+    sorted_validated_response_books_ids = sorted(b.id for b in validated_response.books)
+
+    assert sorted_expected_books_ids == sorted_validated_response_books_ids
+
+    get_test_db_session.expire_all()
+    query = select(Reader).where(Reader.id == target_reader_id).options(selectinload(Reader.books))
+    result = await get_test_db_session.execute(query)
+    db_reader = result.scalar_one_or_none()
+    assert db_reader is not None
+
+    sorted_db_reader_books_ids = sorted([b.id for b in db_reader.books])
+    assert sorted_validated_response_books_ids == sorted_db_reader_books_ids
+
+
+@pytest.mark.parametrize(
+    "is_reader_exist, is_owner, is_book_exist, is_book_already_added , expected_status",
+    [
+        (False, True, True, False, 404),
+        (True, False, True, False, 403),
+        (True, True, False, False, 404),
+        (True, True, True, True, 400)
+    ]
+)
+@pytest.mark.asyncio
+async def test_add_book_to_reader_invalid_payload_404_403_400(
+        client: AsyncClient,
+        get_test_db_session: AsyncSession,
+        fixed_readers: list[Reader],
+        fixed_books: list[Book],
+        setup_auth,
+        is_reader_exist: bool,
+        is_owner: bool,
+        is_book_exist: bool,
+        is_book_already_added: bool,
+        expected_status: int
+):
+    if not is_owner:
+        user_id = fixed_readers[1].user_id
+        role = "reader"
+    else:
+        user_id = 1
+        role = "admin"
+
+    auth_behavior = {"id": user_id, "role": role, "exp": 1, "token_str": "ac"}
+    setup_auth(auth_behavior)
+
+    target = fixed_readers[0]
+    target_reader_id = target.id
+
+    if not is_reader_exist:
+        target_reader_id = 99999
+
+    target_book_id = fixed_books[2].id
+    if not is_book_exist:
+        target_book_id = 99999
+
+    if is_book_already_added:
+        target_book_id = fixed_books[0].id
+
+    expected_books_ids = [b.id for b in target.books]
+
+    sorted_expected_books_ids = sorted(expected_books_ids)
+
+    response = await client.post(f"/readers/{target_reader_id}/books/{target_book_id}")
+
+    assert response.status_code == expected_status
+
+    if is_reader_exist:
+        get_test_db_session.expire_all()
+        query = select(Reader).where(Reader.id == target_reader_id).options(selectinload(Reader.books))
+        result = await get_test_db_session.execute(query)
+        db_reader = result.scalar_one_or_none()
+
+        assert db_reader is not None
+
+        db_book_ids = sorted([b.id for b in db_reader.books])
+
+        assert db_book_ids == sorted_expected_books_ids
 
 
 @pytest.mark.asyncio
-async def test_delete_book_from_reader_success_200():
-    pass
+async def test_add_book_to_reader_as_user_no_owner_403(
+        client: AsyncClient,
+        get_test_db_session: AsyncSession,
+        fixed_readers: list[Reader],
+        fixed_books: list[Book],
+        setup_auth
+):
+    target = fixed_readers[0]
+    target_reader_id = target.id
+    target_book_id = fixed_books[2].id
+    sorted_expected_books_ids = sorted([b.id for b in target.books])
+
+    auth_behavior = {"id": fixed_readers[1].user_id, "role": "reader", "exp": 123, "token_str": "ac"}
+    setup_auth(auth_behavior)
+
+    response = await client.post(f"/readers/{target_reader_id}/books/{target_book_id}")
+    assert response.status_code == 403
+
+    get_test_db_session.expire_all()
+    query = select(Reader).where(Reader.id == target_reader_id).options(selectinload(Reader.books))
+    result = await get_test_db_session.execute(query)
+    db_reader = result.scalar_one()
+
+    sorted_db_books_ids = sorted([b.id for b in db_reader.books])
+
+    assert sorted_expected_books_ids == sorted_db_books_ids
 
 
 @pytest.mark.asyncio
-async def test_delete_reader_as_anonymous_401():
-    pass
+async def test_add_book_to_reader_as_anonymous_401(
+        client: AsyncClient,
+        get_test_db_session: AsyncSession,
+        fixed_readers: list[Reader],
+        fixed_books: list[Book],
+        setup_auth
+):
+    target = fixed_readers[0]
+    target_reader_id = target.id
+    target_book_id = fixed_books[2].id
+    sorted_expected_books_ids = sorted([b.id for b in target.books])
+
+    auth_behavior = {"id": 1, "role": "reader", "exp": 123, "token_str": None}
+    setup_auth(auth_behavior)
+
+    response = await client.post(f"/readers/{target_reader_id}/books/{target_book_id}")
+    assert response.status_code == 401
+
+    get_test_db_session.expire_all()
+    query = select(Reader).where(Reader.id == target_reader_id).options(selectinload(Reader.books))
+    result = await get_test_db_session.execute(query)
+    db_reader = result.scalar_one()
+
+    sorted_db_books_ids = sorted([b.id for b in db_reader.books])
+
+    assert sorted_expected_books_ids == sorted_db_books_ids
 
 
 @pytest.mark.asyncio
-async def test_delete_reader_as_user_403():
-    pass
+async def test_delete_book_from_reader_success_200(
+        client: AsyncClient,
+        get_test_db_session: AsyncSession,
+        fixed_readers: list[Reader],
+        fixed_books: list[Book],
+        setup_auth
+):
+    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": "ac"}
+    setup_auth(auth_behavior)
+
+    target_reader = fixed_readers[0] #books 0,1
+    target_reader_id = target_reader.id
+    target_reader_books_ids = [b.id for b in target_reader.books]
+
+    target_book_id = target_reader.books[0].id #0
+
+    expected_books_ids = target_reader_books_ids
+    expected_books_ids.remove(target_book_id)
+
+    sorted_expected_books_ids = sorted(expected_books_ids)
+
+    response = await client.delete(f"/readers/{target_reader_id}/books/{target_book_id}")
+
+    assert response.status_code == 200
+
+    validated_response = ReaderResponse.model_validate(response.json())
+
+    sorted_validated_response_books_ids = sorted(b.id for b in validated_response.books)
+
+    assert sorted_expected_books_ids == sorted_validated_response_books_ids
+
+    get_test_db_session.expire_all()
+    query = select(Reader).where(Reader.id == target_reader_id).options(selectinload(Reader.books))
+    result = await get_test_db_session.execute(query)
+    db_reader = result.scalar_one_or_none()
+    assert db_reader is not None
+
+    sorted_db_reader_books_ids = sorted([b.id for b in db_reader.books])
+    assert sorted_validated_response_books_ids == sorted_db_reader_books_ids
+
+
+@pytest.mark.parametrize(
+    "is_reader_exist, is_owner, is_book_exist, is_book_already_deleted , expected_status",
+    [
+        (False, True, True, False, 404),
+        (True, False, True, False, 403),
+        (True, True, False, False, 400),
+        (True, True, True, True, 400)
+    ]
+)
+@pytest.mark.asyncio
+async def test_delete_book_from_reader_invalid_payload_404_403_400(
+        client: AsyncClient,
+        get_test_db_session: AsyncSession,
+        fixed_readers: list[Reader],
+        fixed_books: list[Book],
+        setup_auth,
+        is_reader_exist: bool,
+        is_owner: bool,
+        is_book_exist: bool,
+        is_book_already_deleted: bool,
+        expected_status: int
+):
+    if not is_owner:
+        user_id = fixed_readers[2].user_id
+        role = "reader"
+    else:
+        user_id = 1
+        role = "admin"
+
+    auth_behavior = {"id": user_id, "role": role, "exp": 1, "token_str": "ac"}
+    setup_auth(auth_behavior)
+
+    target = fixed_readers[1]
+    target_reader_id = target.id
+
+    if not is_reader_exist:
+        target_reader_id = 99999
+
+    target_book_id = fixed_books[0].id
+    if not is_book_exist:
+        target_book_id = 99999
+
+    if is_book_already_deleted:
+        target_book_id = fixed_books[2].id
+
+    expected_books_ids = [b.id for b in target.books]
+
+    sorted_expected_books_ids = sorted(expected_books_ids)
+
+    response = await client.delete(f"/readers/{target_reader_id}/books/{target_book_id}")
+
+    assert response.status_code == expected_status
+
+    if is_reader_exist:
+        get_test_db_session.expire_all()
+        query = select(Reader).where(Reader.id == target_reader_id).options(selectinload(Reader.books))
+        result = await get_test_db_session.execute(query)
+        db_reader = result.scalar_one_or_none()
+
+        assert db_reader is not None
+
+        db_book_ids = sorted([b.id for b in db_reader.books])
+
+        assert db_book_ids == sorted_expected_books_ids
 
 
 @pytest.mark.asyncio
-async def test_delete_reader_success_200():
-    pass
+async def test_delete_book_form_reader_as_user_no_owner_403(
+        client: AsyncClient,
+        get_test_db_session: AsyncSession,
+        fixed_readers: list[Reader],
+        fixed_books: list[Book],
+        setup_auth
+    ):
+        target = fixed_readers[2]
+        target_reader_id = target.id
+        target_book_id = fixed_books[2].id
+        sorted_expected_books_ids = sorted([b.id for b in target.books])
+
+        auth_behavior = {"id": fixed_readers[1].user_id, "role": "reader", "exp": 123, "token_str": "ac"}
+        setup_auth(auth_behavior)
+
+        response = await client.delete(f"/readers/{target_reader_id}/books/{target_book_id}")
+        assert response.status_code == 403
+
+        get_test_db_session.expire_all()
+        query = select(Reader).where(Reader.id == target_reader_id).options(selectinload(Reader.books))
+        result = await get_test_db_session.execute(query)
+        db_reader = result.scalar_one()
+
+        sorted_db_books_ids = sorted([b.id for b in db_reader.books])
+
+        assert sorted_expected_books_ids == sorted_db_books_ids
+
+
+@pytest.mark.asyncio
+async def test_delete_book_from_reader_as_anonymous_401(
+        client: AsyncClient,
+        get_test_db_session: AsyncSession,
+        fixed_readers: list[Reader],
+        fixed_books: list[Book],
+        setup_auth
+    ):
+        target = fixed_readers[2]
+        target_reader_id = target.id
+        target_book_id = fixed_books[2].id
+        sorted_expected_books_ids = sorted([b.id for b in target.books])
+
+        auth_behavior = {"id": fixed_readers[1].user_id, "role": "admin", "exp": 123, "token_str": None}
+        setup_auth(auth_behavior)
+
+        response = await client.delete(f"/readers/{target_reader_id}/books/{target_book_id}")
+        assert response.status_code == 401
+
+        get_test_db_session.expire_all()
+        query = select(Reader).where(Reader.id == target_reader_id).options(selectinload(Reader.books))
+        result = await get_test_db_session.execute(query)
+        db_reader = result.scalar_one()
+
+        sorted_db_books_ids = sorted([b.id for b in db_reader.books])
+
+        assert sorted_expected_books_ids == sorted_db_books_ids
+
+
+@pytest.mark.asyncio
+async def test_delete_author_anonymous_return_401(
+        client: AsyncClient,
+        fixed_readers: list[Reader],
+        get_test_db_session: AsyncSession,
+        setup_auth
+):
+    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": None}
+    setup_auth(auth_behavior)
+
+    response = await client.delete(f"/readers/{fixed_readers[0].id}")
+
+    assert response.status_code == 401
+
+    result = await get_test_db_session.execute(select(Reader))
+    db_readers = result.scalars().all()
+
+    assert len(db_readers) == len(fixed_readers)
+
+
+@pytest.mark.asyncio
+async def test_delete_reader_as_user_403(
+        client: AsyncClient,
+        fixed_readers: list[Reader],
+        get_test_db_session: AsyncSession,
+        setup_auth
+):
+    auth_behavior = {"id": 1, "role": "reader", "exp": 1, "token_str": "at"}
+    setup_auth(auth_behavior)
+
+    response = await client.delete(f"/readers/{fixed_readers[0].id}")
+    assert response.status_code == 403
+
+    get_test_db_session.expire_all()
+    result = await get_test_db_session.execute(select(Reader))
+    db_readers = result.scalars().all()
+
+    assert len(db_readers) == len(fixed_readers)
+
+
+@pytest.mark.asyncio
+async def test_delete_reader_success_204(
+    client: AsyncClient,
+    setup_auth,
+    get_test_db_session: AsyncSession,
+    fixed_readers: list[Author]
+
+):
+    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": "access_token"}
+    setup_auth(auth_behavior)
+
+    target = fixed_readers[0]
+    target_id = target.id
+
+    response = await client.delete(f"/readers/{target_id}")
+    assert response.status_code == 204
+
+    get_test_db_session.expire_all()
+    reader_db = await get_test_db_session.get(Reader, target_id)
+
+    assert reader_db is None
+
+
+@pytest.mark.asyncio
+async def test_delete_reader_not_found_404(
+    client: AsyncClient,
+    setup_auth,
+    get_test_db_session: AsyncSession,
+    fixed_readers: list[Reader]
+):
+    auth_behavior = {"id": 1, "role": "admin", "exp": 1, "token_str": "access_token"}
+    setup_auth(auth_behavior)
+
+    response = await client.delete("/readers/999999")
+
+    assert response.status_code == 404
+
+    result = await get_test_db_session.execute(select(Reader))
+    existing_authors = result.scalars().all()
+
+    assert len(existing_authors) == len(fixed_readers)
+
 
 
 

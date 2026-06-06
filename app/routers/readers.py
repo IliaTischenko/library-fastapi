@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth_utils import RoleChecker
 from app.database import get_db_session
-from app.models import Reader, Book
+from app.models import Reader, Book, UserRole
 from app.schemas import ReaderInput, ReaderUpdate, ReaderResponse
 
 
@@ -231,7 +231,7 @@ async def patch_reader(
 
 
 @router.post(
-    "/readers/{reader_id}/books/{book_id}",
+    "/{reader_id}/books/{book_id}",
     response_model=ReaderResponse,
     summary="Добавить читателю книгу",
     responses={
@@ -265,7 +265,7 @@ async def add_book_to_reader(
             detail="Reader with this ID is not found"
         )
 
-    if payloads['id'] != existing_reader.user_id:
+    if payloads['role'] != UserRole.ADMIN and payloads['id'] != existing_reader.user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient rights"
@@ -303,7 +303,7 @@ async def add_book_to_reader(
 
 
 @router.delete(
-    "/readers/{reader_id}/books/{book_id}",
+    "/{reader_id}/books/{book_id}",
     response_model=ReaderResponse,
     summary="Удалить книгу у читателя",
     responses={
@@ -337,10 +337,10 @@ async def delete_book_from_reader(
             detail="Reader with this ID is not found"
         )
 
-    if payloads['id'] != existing_reader.user_id:
+    if payloads['id'] != existing_reader.user_id and payloads['role'] != UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Insufficient rights 111111"
+            detail="Insufficient rights"
         )
 
 
