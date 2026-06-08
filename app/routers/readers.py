@@ -11,8 +11,7 @@ from app.database import get_db_session
 from app.models import Reader, Book, UserRole
 from app.schemas import ReaderInput, ReaderUpdate, ReaderResponse
 
-
-router = APIRouter(prefix='/readers', tags=["Читатели"])
+router = APIRouter(prefix="/readers", tags=["Читатели"])
 
 ITEMS_PER_PAGE = 10
 
@@ -21,15 +20,21 @@ ITEMS_PER_PAGE = 10
     "/",
     status_code=status.HTTP_200_OK,
     response_model=list[ReaderResponse],
-    summary="Получить список читателей с фильтрацией"
+    summary="Получить список читателей с фильтрацией",
 )
 async def get_readers(
-        full_name: Optional[str] = Query(None, description="Search by reader name"),
-        book_title: Optional[str] = Query(None, description="Search reader with book title"),
-        start_date: Optional[date] = Query(None, description="Search at date (to end_date)"),
-        end_date: Optional[date] = Query(None, description="Search to date (at start_date)"),
-        db_session: AsyncSession = Depends(get_db_session),
-        page: int = Query(default=1, ge=1)
+    full_name: Optional[str] = Query(None, description="Search by reader name"),
+    book_title: Optional[str] = Query(
+        None, description="Search reader with book title"
+    ),
+    start_date: Optional[date] = Query(
+        None, description="Search at date (to end_date)"
+    ),
+    end_date: Optional[date] = Query(
+        None, description="Search to date (at start_date)"
+    ),
+    db_session: AsyncSession = Depends(get_db_session),
+    page: int = Query(default=1, ge=1),
 ):
     """
     Получить список читателей с возможностью фильтации, подтягивает список книг читателя(mtm связь)
@@ -40,7 +45,9 @@ async def get_readers(
     в случае указания двух параметров start_date и end_date поиск осуществляется в диапазоне этих дат
     """
 
-    query = select(Reader).options(selectinload(Reader.books).joinedload(Book.author), joinedload(Reader.user))
+    query = select(Reader).options(
+        selectinload(Reader.books).joinedload(Book.author), joinedload(Reader.user)
+    )
     if full_name:
         query = query.where(Reader.full_name.ilike(f"%{full_name}%"))
     if start_date:
@@ -48,14 +55,11 @@ async def get_readers(
     if end_date:
         query = query.where(Reader.register_date <= end_date)
     if book_title:
-        query = query.where(
-            Reader.books.any(Book.title.ilike(f"{book_title}%"))
-        )
+        query = query.where(Reader.books.any(Book.title.ilike(f"{book_title}%")))
 
     query = query.distinct()
     offset_value = (page - 1) * ITEMS_PER_PAGE
     query = query.offset(offset_value).limit(ITEMS_PER_PAGE)
-
 
     result = await db_session.execute(query)
     readers = result.scalars().all()
@@ -68,11 +72,11 @@ async def get_readers(
     status_code=status.HTTP_200_OK,
     response_model=ReaderResponse,
     summary="Получить читателя по ID",
-    responses={
-        404: {"description": "Читатель с указанным ID не найден"}
-    }
+    responses={404: {"description": "Читатель с указанным ID не найден"}},
 )
-async def get_reader_detail(reader_id: int, db_session:AsyncSession = Depends(get_db_session)):
+async def get_reader_detail(
+    reader_id: int, db_session: AsyncSession = Depends(get_db_session)
+):
     """
     Возвращает подробную информацию о читателе по его уникальному ID, подтягивает список книг читателя(m2m связь)
     - **reader_id**: ID читателя
@@ -80,12 +84,15 @@ async def get_reader_detail(reader_id: int, db_session:AsyncSession = Depends(ge
     db_reader = await db_session.get(
         Reader,
         reader_id,
-        options=[selectinload(Reader.books).joinedload(Book.author), joinedload(Reader.user)]
+        options=[
+            selectinload(Reader.books).joinedload(Book.author),
+            joinedload(Reader.user),
+        ],
     )
     if db_reader is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Reader with this id is not found"
+            detail="Reader with this id is not found",
         )
 
     return db_reader
@@ -99,13 +106,14 @@ async def get_reader_detail(reader_id: int, db_session:AsyncSession = Depends(ge
     responses={
         401: {"description": "Требуется аутентификация"},
         403: {"description": "Недостаточно прав"},
-        404: {"description": "Читатель с указанным ID не найден"}
-    })
+        404: {"description": "Читатель с указанным ID не найден"},
+    },
+)
 async def put_reader(
-        reader_id: int,
-        reader_data: ReaderInput,
-        db_session: AsyncSession = Depends(get_db_session),
-        payloads: dict[str, Any] = Depends(RoleChecker(("admin",)))
+    reader_id: int,
+    reader_data: ReaderInput,
+    db_session: AsyncSession = Depends(get_db_session),
+    payloads: dict[str, Any] = Depends(RoleChecker(("admin",))),
 ):
     """
     Полное обновление (замена) данных читателя. Требует аутентификации (Только Администратор).
@@ -118,32 +126,27 @@ async def put_reader(
     - **reader_data**: Новое полное состояние объекта (все обязательные поля должны быть переданы).
 
      Возвращает объект с заменёнными данными, подтягивает его книги(mtm связь) и их авторов(Book.author 1tm связь)
-     """
+    """
 
     db_reader = await db_session.get(
-        Reader,
-        reader_id,
-        options=[selectinload(Reader.books).joinedload(Book.author)])
+        Reader, reader_id, options=[selectinload(Reader.books).joinedload(Book.author)]
+    )
 
     if db_reader is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Reader with this id is not found"
+            detail="Reader with this id is not found",
         )
 
     reader_dict = reader_data.model_dump()
     books_ids = reader_dict.pop("books_ids", [])
 
-
     result = await db_session.execute(
-        select(Book).
-        options(joinedload(Book.author)).
-        where(Book.id.in_(books_ids))
+        select(Book).options(joinedload(Book.author)).where(Book.id.in_(books_ids))
     )
     books = result.scalars().all()
 
     db_reader.books = books
-
 
     for key, val in reader_dict.items():
         setattr(db_reader, key, val)
@@ -151,9 +154,11 @@ async def put_reader(
     await db_session.commit()
 
     result = await db_session.execute(
-        select(Reader).
-        options(selectinload(Reader.books).joinedload(Book.author), joinedload(Reader.user)).
-        where(Reader.id == reader_id)
+        select(Reader)
+        .options(
+            selectinload(Reader.books).joinedload(Book.author), joinedload(Reader.user)
+        )
+        .where(Reader.id == reader_id)
     )
     reader_with_relations = result.scalar_one()
 
@@ -168,14 +173,14 @@ async def put_reader(
     responses={
         401: {"description": "Требуется аутентификация"},
         403: {"description": "Недостаточно прав"},
-        404: {"description": "Читатель с указанным ID не найден"}
-    }
+        404: {"description": "Читатель с указанным ID не найден"},
+    },
 )
 async def patch_reader(
-        reader_id: int,
-        reader_data: ReaderUpdate,
-        db_session: AsyncSession = Depends(get_db_session),
-        payloads: dict[str, Any] = Depends(RoleChecker(("admin",)))
+    reader_id: int,
+    reader_data: ReaderUpdate,
+    db_session: AsyncSession = Depends(get_db_session),
+    payloads: dict[str, Any] = Depends(RoleChecker(("admin",))),
 ):
     """
      Частично обновить данные читателя. Требует аутентификации (Только администратор)
@@ -188,28 +193,24 @@ async def patch_reader(
     - **reader_data**: Поля читателя, которые необходимо изменить.
 
      Возвращает читателя, подтягивает его книги(mtm) и их авторов(Book.author 1tm)
-     """
+    """
 
     db_reader = await db_session.get(
-        Reader,
-        reader_id,
-        options=[selectinload(Reader.books).joinedload(Book.author)])
+        Reader, reader_id, options=[selectinload(Reader.books).joinedload(Book.author)]
+    )
 
     if db_reader is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Reader with this id is not found"
+            detail="Reader with this id is not found",
         )
-
 
     reader_dict = reader_data.model_dump(exclude_unset=True)
 
     books_ids = reader_dict.pop("books_ids", [])
 
     result = await db_session.execute(
-        select(Book).
-        options(joinedload(Book.author)).
-        where(Book.id.in_(books_ids))
+        select(Book).options(joinedload(Book.author)).where(Book.id.in_(books_ids))
     )
     books = result.scalars().all()
 
@@ -221,9 +222,11 @@ async def patch_reader(
     await db_session.commit()
 
     result = await db_session.execute(
-        select(Reader).
-        options(selectinload(Reader.books).joinedload(Book.author), joinedload(Reader.user)).
-        where(Reader.id == reader_id)
+        select(Reader)
+        .options(
+            selectinload(Reader.books).joinedload(Book.author), joinedload(Reader.user)
+        )
+        .where(Reader.id == reader_id)
     )
     reader_with_relations = result.scalar_one()
 
@@ -237,13 +240,21 @@ async def patch_reader(
     responses={
         400: {"description": "Читатель уже взял эту книгу"},
         403: {"description": "Недостаточно прав"},
-        404: {"description": "Читатель/книга с таким ID не найден"}
-    })
+        404: {"description": "Читатель/книга с таким ID не найден"},
+    },
+)
 async def add_book_to_reader(
-        reader_id: int,
-        book_id: int,
-        db_session: AsyncSession = Depends(get_db_session),
-        payloads: dict[str, Any] = Depends(RoleChecker(("admin", "reader",)))
+    reader_id: int,
+    book_id: int,
+    db_session: AsyncSession = Depends(get_db_session),
+    payloads: dict[str, Any] = Depends(
+        RoleChecker(
+            (
+                "admin",
+                "reader",
+            )
+        )
+    ),
 ):
     """
     Добавить книгу читателю.
@@ -256,50 +267,50 @@ async def add_book_to_reader(
     existing_reader = await db_session.get(
         Reader,
         reader_id,
-        options=[selectinload(Reader.books).joinedload(Book.author), joinedload(Reader.user)]
+        options=[
+            selectinload(Reader.books).joinedload(Book.author),
+            joinedload(Reader.user),
+        ],
     )
 
     if existing_reader is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Reader with this ID is not found"
+            detail="Reader with this ID is not found",
         )
 
-    if payloads['role'] != UserRole.ADMIN and payloads['id'] != existing_reader.user_id:
+    if payloads["role"] != UserRole.ADMIN and payloads["id"] != existing_reader.user_id:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Insufficient rights"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient rights"
         )
 
-    existing_book = await db_session.get(
-        Book,
-        book_id
-    )
+    existing_book = await db_session.get(Book, book_id)
 
     if existing_book is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Book with this ID is not found"
+            detail="Book with this ID is not found",
         )
 
     if existing_book in existing_reader.books:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="the reader has already taken this book"
+            detail="the reader has already taken this book",
         )
 
     existing_reader.books.append(existing_book)
     await db_session.commit()
 
     result = await db_session.execute(
-        select(Reader).
-        options(selectinload(Reader.books).joinedload(Book.author), joinedload(Reader.user)).
-        where(Reader.id == reader_id)
+        select(Reader)
+        .options(
+            selectinload(Reader.books).joinedload(Book.author), joinedload(Reader.user)
+        )
+        .where(Reader.id == reader_id)
     )
     reader_with_relations = result.scalar_one()
 
     return reader_with_relations
-
 
 
 @router.delete(
@@ -309,13 +320,21 @@ async def add_book_to_reader(
     responses={
         400: {"description": "Книги нет у читателя"},
         403: {"description": "Недостаточно прав"},
-        404: {"description": "Читатель с таким ID не найден"}
-    })
+        404: {"description": "Читатель с таким ID не найден"},
+    },
+)
 async def delete_book_from_reader(
-        reader_id: int,
-        book_id: int,
-        db_session: AsyncSession = Depends(get_db_session),
-        payloads: dict[str, Any] = Depends(RoleChecker(("admin", "reader",)))
+    reader_id: int,
+    book_id: int,
+    db_session: AsyncSession = Depends(get_db_session),
+    payloads: dict[str, Any] = Depends(
+        RoleChecker(
+            (
+                "admin",
+                "reader",
+            )
+        )
+    ),
 ):
     """
     Удалить книгу читателю.
@@ -326,23 +345,19 @@ async def delete_book_from_reader(
     Возвращает читателя, подтягивает его книги(mtm) и их авторов(Book.author 1tm)
     """
     existing_reader = await db_session.get(
-        Reader,
-        reader_id,
-        options=[selectinload(Reader.books).joinedload(Book.author)]
+        Reader, reader_id, options=[selectinload(Reader.books).joinedload(Book.author)]
     )
 
     if existing_reader is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Reader with this ID is not found"
+            detail="Reader with this ID is not found",
         )
 
-    if payloads['id'] != existing_reader.user_id and payloads['role'] != UserRole.ADMIN:
+    if payloads["id"] != existing_reader.user_id and payloads["role"] != UserRole.ADMIN:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Insufficient rights"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient rights"
         )
-
 
     existing_book = await db_session.get(Book, book_id)
 
@@ -352,15 +367,15 @@ async def delete_book_from_reader(
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="The reader does not have the book"
+            detail="The reader does not have the book",
         )
 
-
-
     result = await db_session.execute(
-        select(Reader).
-        options(selectinload(Reader.books).joinedload(Book.author), joinedload(Reader.user)).
-        where(Reader.id == reader_id)
+        select(Reader)
+        .options(
+            selectinload(Reader.books).joinedload(Book.author), joinedload(Reader.user)
+        )
+        .where(Reader.id == reader_id)
     )
     reader_with_relations = result.scalar_one()
 
@@ -374,13 +389,13 @@ async def delete_book_from_reader(
     responses={
         401: {"description": "Требуется аутентификация"},
         403: {"description": "Недостаточно прав"},
-        404: {"description": "Читатель с указанным ID не найден"}
-        }
-    )
+        404: {"description": "Читатель с указанным ID не найден"},
+    },
+)
 async def delete_book(
-        reader_id: int,
-        db_session: AsyncSession = Depends(get_db_session),
-        payloads: dict[str, Any] = Depends(RoleChecker(("admin",)))
+    reader_id: int,
+    db_session: AsyncSession = Depends(get_db_session),
+    payloads: dict[str, Any] = Depends(RoleChecker(("admin",))),
 ):
     """
     Удалить читателя по указанному ID. Требует аутентификации (Только администратор).
@@ -391,7 +406,7 @@ async def delete_book(
     if db_reader is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Reader with this id is not found"
+            detail="Reader with this id is not found",
         )
 
     await db_session.delete(db_reader)
