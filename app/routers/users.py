@@ -7,20 +7,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth_utils import get_password_hash, verify_password, RoleChecker
 from app.database import get_db_session
 from app.models import User, UserRole, Reader, Book
-from app.schemas import UserAuthSchema, UserResponse, UserChangePassword, UserReaderInput, ReaderResponse
+from app.schemas import (
+    UserAuthSchema,
+    UserResponse,
+    UserChangePassword,
+    UserReaderInput,
+    ReaderResponse,
+)
 
+router = APIRouter(prefix="/users", tags=["Пользователи"])
 
-router = APIRouter(prefix="/users", tags=['Пользователи'])
 
 @router.get(
     "/",
     status_code=status.HTTP_200_OK,
     response_model=list[UserResponse],
-    summary="Получить список пользователей"
+    summary="Получить список пользователей",
 )
 async def get_users(
-        db_session:AsyncSession = Depends(get_db_session),
-        payloads: dict = Depends(RoleChecker(("admin",)))):
+    db_session: AsyncSession = Depends(get_db_session),
+    payloads: dict = Depends(RoleChecker(("admin",))),
+):
     """
     Возвращает список пользователей
     Защищенный, только администраторы
@@ -32,7 +39,6 @@ async def get_users(
     return users
 
 
-
 @router.post(
     "/register-admin",
     status_code=status.HTTP_201_CREATED,
@@ -41,12 +47,13 @@ async def get_users(
     responses={
         400: {"description": "Админ с таким именем уже существует"},
         401: {"description": "Требуется аутентификация"},
-        403: {"description": "Недостаточно прав"}
-    })
+        403: {"description": "Недостаточно прав"},
+    },
+)
 async def create_admin(
-        user_data: UserAuthSchema,
-        db_session: AsyncSession = Depends(get_db_session),
-        current_user = Depends(RoleChecker(("admin",)))
+    user_data: UserAuthSchema,
+    db_session: AsyncSession = Depends(get_db_session),
+    current_user=Depends(RoleChecker(("admin",))),
 ):
     """
     Создание нового админа. Только администратор
@@ -63,12 +70,14 @@ async def create_admin(
     if existing_admin:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Admin with this username already exists"
+            detail="Admin with this username already exists",
         )
 
     hashed_pass = get_password_hash(user_data.password)
 
-    db_admin = User(username=user_data.username, hashed_pass=hashed_pass, role=UserRole.ADMIN)
+    db_admin = User(
+        username=user_data.username, hashed_pass=hashed_pass, role=UserRole.ADMIN
+    )
     db_session.add(db_admin)
 
     await db_session.commit()
@@ -82,13 +91,10 @@ async def create_admin(
     status_code=status.HTTP_201_CREATED,
     response_model=ReaderResponse,
     summary="Регистрация нового читателя",
-    responses={
-        400: {"description": "Юзер с таким username уже существует"}
-    }
+    responses={400: {"description": "Юзер с таким username уже существует"}},
 )
 async def create_reader(
-        reader_data: UserReaderInput,
-        db_session: AsyncSession = Depends(get_db_session)
+    reader_data: UserReaderInput, db_session: AsyncSession = Depends(get_db_session)
 ):
     """
     Создание нового читателя.
@@ -103,24 +109,26 @@ async def create_reader(
     Возвращает объект созданного читателя с присвоенным ID из БД,
      подтягивает его книги(mtm связь) и их авторов(Book.author 1tm связь)
     """
-    query = select(User).where(func.lower(User.username) == reader_data.username.lower())
+    query = select(User).where(
+        func.lower(User.username) == reader_data.username.lower()
+    )
     result = await db_session.execute(query)
     existing_user = result.scalar_one_or_none()
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User with this username already exists"
+            detail="User with this username already exists",
         )
 
     hashed_pass = get_password_hash(reader_data.password)
 
-    db_user = User(username=reader_data.username, hashed_pass=hashed_pass, role=UserRole.READER)
+    db_user = User(
+        username=reader_data.username, hashed_pass=hashed_pass, role=UserRole.READER
+    )
     db_session.add(db_user)
 
     await db_session.commit()
     await db_session.refresh(db_user)
-
-
 
     data_dict = reader_data.model_dump(exclude={"username", "password"})
     books_ids = data_dict.pop("books_ids", [])
@@ -144,11 +152,7 @@ async def create_reader(
     )
     reader_with_relations = result.scalar_one()
 
-
-
     return reader_with_relations
-
-
 
 
 @router.patch(
@@ -159,14 +163,13 @@ async def create_reader(
     responses={
         400: {"description": "Неверный старый пароль"},
         401: {"description": "Требуется аутентификация"},
-        404: {"description": "Пользователь не найден"}
-
-    }
+        404: {"description": "Пользователь не найден"},
+    },
 )
 async def change_pass(
-        user_data: UserChangePassword,
-        db_session: AsyncSession = Depends(get_db_session),
-        payloads: dict = Depends(RoleChecker())
+    user_data: UserChangePassword,
+    db_session: AsyncSession = Depends(get_db_session),
+    payloads: dict = Depends(RoleChecker()),
 ):
     """
     Принимает JSON-объект с новым паролем, хеширует его и заменяет.
@@ -177,23 +180,20 @@ async def change_pass(
     existing_user = await db_session.get(User, payloads["id"])
     if existing_user is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User with tis ID not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="User with tis ID not found"
         )
 
     current_hash = str(existing_user.hashed_pass)
 
     if not verify_password(user_data.old_password, current_hash):
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Wrong old password"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Wrong old password"
         )
 
     new_hashed_pass = get_password_hash(user_data.new_password)
 
     existing_user.hashed_pass = new_hashed_pass
     await db_session.commit()
-
 
     return existing_user
 
@@ -202,13 +202,12 @@ async def change_pass(
     "/{user_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Удалить юзера по указанному ID",
-    responses={
-        404: {"description": "Юзер с указанным ID не найден"}
-    })
+    responses={404: {"description": "Юзер с указанным ID не найден"}},
+)
 async def delete_user(
-        user_id: int,
-        db_session: AsyncSession = Depends(get_db_session),
-        payloads: dict = Depends(RoleChecker(("admin",)))
+    user_id: int,
+    db_session: AsyncSession = Depends(get_db_session),
+    payloads: dict = Depends(RoleChecker(("admin",))),
 ):
     """
     Удалить юзера по указанному id, защищенный (только Администратор)
@@ -217,8 +216,7 @@ async def delete_user(
     db_user = await db_session.get(User, user_id)
     if db_user is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User with tis ID not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="User with tis ID not found"
         )
 
     await db_session.delete(db_user)

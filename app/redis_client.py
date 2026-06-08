@@ -1,12 +1,17 @@
+import os
 import redis.asyncio as aioredis
 
-REDIS_URL = "redis://redis:6379/0"
 
 redis_client: aioredis.Redis | None = None
+
 
 def get_redis_client() -> aioredis.Redis:
     global redis_client
     if redis_client is None:
+        REDIS_HOST = os.getenv("REDIS_HOST", "redis")
+        REDIS_PORT = os.getenv("REDIS_PORT", "6379")
+        REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/0"
+
         redis_client = aioredis.from_url(REDIS_URL, decode_responses=True)
     return redis_client
 
@@ -17,6 +22,7 @@ async def add_token_to_blacklist(token: str, expire_seconds: int):
     """
     client = get_redis_client()
     await client.set(name=f"blacklist:{token}", value="1", ex=expire_seconds)
+
 
 async def is_token_blacklisted(token: str) -> bool:
     """
@@ -29,4 +35,3 @@ async def is_token_blacklisted(token: str) -> bool:
         return True
 
     return False
-

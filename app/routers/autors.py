@@ -9,9 +9,7 @@ from app.database import get_db_session
 from app.models import Author
 from app.schemas import AuthorInput, AuthorUpdate, AuthorResponse
 
-
-
-router = APIRouter(prefix='/authors', tags=["Авторы"])
+router = APIRouter(prefix="/authors", tags=["Авторы"])
 ITEMS_PER_PAGE = 10
 
 
@@ -25,7 +23,7 @@ async def get_authors(
     author_name: Optional[str] = Query(None, description="Search by name"),
     country: Optional[str] = Query(None, description="Search by country"),
     db_session: AsyncSession = Depends(get_db_session),
-    page: int = Query(default=1, ge=1)
+    page: int = Query(default=1, ge=1),
 ):
     """
     Возвращает список авторов с возможностью фильтрации.
@@ -39,7 +37,6 @@ async def get_authors(
 
     if country:
         query = query.where(Author.country.ilike(country))
-
 
     offset_value = (page - 1) * ITEMS_PER_PAGE
     query = query.offset(offset_value).limit(ITEMS_PER_PAGE)
@@ -56,39 +53,40 @@ async def get_authors(
     summary="Получить автора по ID",
     responses={
         404: {"description": "Автор с указанным ID не найден"},
-    })
-async def get_author_detail(author_id: int, db_session: AsyncSession = Depends(get_db_session)):
+    },
+)
+async def get_author_detail(
+    author_id: int, db_session: AsyncSession = Depends(get_db_session)
+):
     """
     Возвращает подробную информацию об авторе по его уникальному ID.
     - **author_id**: ID автора
     """
-    db_author = await db_session.get(
-        Author,
-        author_id
-    )
+    db_author = await db_session.get(Author, author_id)
     if db_author is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Author with this id is not found"
+            detail="Author with this id is not found",
         )
 
     return db_author
 
 
 @router.post(
-"/",
+    "/",
     status_code=status.HTTP_201_CREATED,
     response_model=AuthorResponse,
     summary="Создать нового автора",
     responses={
         401: {"description": "Требуется аутентификация"},
-        403: {"description": "Недостаточно прав"}
-    }
+        403: {"description": "Недостаточно прав"},
+    },
 )
 async def create_author(
-        author_data: AuthorInput,
-        db_session: AsyncSession = Depends(get_db_session),
-        payloads: dict[str, Any] = Depends(RoleChecker(("admin",)))):
+    author_data: AuthorInput,
+    db_session: AsyncSession = Depends(get_db_session),
+    payloads: dict[str, Any] = Depends(RoleChecker(("admin",))),
+):
     """
     Создание нового автора. Требует аутентификации (Только администратор)
     Принимает JSON-объект с данными автора, валидирует их
@@ -112,14 +110,15 @@ async def create_author(
     responses={
         401: {"description": "Требуется аутентификация"},
         403: {"description": "Недостаточно прав"},
-        404: {"description": "Автор с указанным ID не найден"}
-    }
+        404: {"description": "Автор с указанным ID не найден"},
+    },
 )
 async def put_author(
-        author_id: int,
-        author_data: AuthorInput,
-        db_session: AsyncSession = Depends(get_db_session),
-        payloads: dict[str, Any] = Depends(RoleChecker(("admin",)))):
+    author_id: int,
+    author_data: AuthorInput,
+    db_session: AsyncSession = Depends(get_db_session),
+    payloads: dict[str, Any] = Depends(RoleChecker(("admin",))),
+):
     """
     Полное обновление (замена) данных автора. Требует аутентификации. (Только администратор)
     Принимает JSON-объект с данными книги, валидирует их
@@ -133,13 +132,12 @@ async def put_author(
 
     if db_author is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Author is not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Author is not found"
         )
 
     update_data = author_data.model_dump()
 
-    for key,val in update_data.items():
+    for key, val in update_data.items():
         setattr(db_author, key, val)
 
     await db_session.commit()
@@ -155,13 +153,14 @@ async def put_author(
     responses={
         401: {"description": "Требуется аутентификация"},
         403: {"description": "Недостаточно прав"},
-        404: {"description": "Автор с указанным ID не найден"}
-    })
+        404: {"description": "Автор с указанным ID не найден"},
+    },
+)
 async def patch_author(
-        author_id: int,
-        author_data: AuthorUpdate,
-        db_session: AsyncSession = Depends(get_db_session),
-        payloads: dict[str, Any] = Depends(RoleChecker(("admin",)))
+    author_id: int,
+    author_data: AuthorUpdate,
+    db_session: AsyncSession = Depends(get_db_session),
+    payloads: dict[str, Any] = Depends(RoleChecker(("admin",))),
 ):
     """
     Частичное обновление данных автора. Требует аутентификации. (Только администратор)
@@ -177,8 +176,7 @@ async def patch_author(
 
     if db_author is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Author is not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Author is not found"
         )
 
     update_data = author_data.model_dump(exclude_unset=True)
@@ -198,13 +196,13 @@ async def patch_author(
     responses={
         401: {"description": "Требуется аутентификация"},
         403: {"description": "Недостаточно прав"},
-        404: {"description": "Автор с указанным ID не найден"}
-    }
+        404: {"description": "Автор с указанным ID не найден"},
+    },
 )
 async def delete_author(
-        author_id: int,
-        db_session: AsyncSession = Depends(get_db_session),
-        payloads: dict[str, Any] = Depends(RoleChecker(("admin",)))
+    author_id: int,
+    db_session: AsyncSession = Depends(get_db_session),
+    payloads: dict[str, Any] = Depends(RoleChecker(("admin",))),
 ):
     """
     Удалить автора по указанному id. Требует аутентификации. (Только администратор)
@@ -214,13 +212,10 @@ async def delete_author(
 
     if db_author is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Author is not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Author is not found"
         )
 
     await db_session.delete(db_author)
     await db_session.commit()
 
     return None
-
-

@@ -12,23 +12,19 @@ from app.models import User
 from app.schemas import UserAuthSchema
 from app.redis_client import add_token_to_blacklist
 
-
-
-router = APIRouter(prefix="/auth", tags=['Authentication'])
+router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
 @router.post(
     "/login",
     status_code=status.HTTP_200_OK,
     summary="Вход в систему",
-    responses={
-        401: {"description": "Неверное имя пользователя или пароль"}
-    }
+    responses={401: {"description": "Неверное имя пользователя или пароль"}},
 )
 async def login(
-        login_data: UserAuthSchema,
-        response: Response,
-        db_session: AsyncSession = Depends(get_db_session)
+    login_data: UserAuthSchema,
+    response: Response,
+    db_session: AsyncSession = Depends(get_db_session),
 ):
     """
     Вход в систему.
@@ -43,7 +39,7 @@ async def login(
     if db_user is None or not verify_password(login_data.password, db_user.hashed_pass):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Wrong username or password"
+            detail="Wrong username or password",
         )
 
     token = create_access_token(user_id=db_user.id, role=db_user.role)
@@ -57,7 +53,7 @@ async def login(
         httponly=True,
         max_age=max_age,
         samesite="lax",
-        secure=False
+        secure=not os.getenv("DEBUG"),
     )
 
     return {"detail": "Login success"}
@@ -67,23 +63,20 @@ async def login(
     "/logout",
     status_code=status.HTTP_200_OK,
     summary="Выход из системы",
-    responses={
-        401: {"description": "токен отсутствует или просрочен"}
-    }
+    responses={401: {"description": "токен отсутствует или просрочен"}},
 )
-async def logout(response: Response, payloads: dict[str, Any] = Depends(RoleChecker())):
+async def logout(response: Response, payload: dict[str, Any] = Depends(RoleChecker())):
     """
     Выход из системы.
     Заносим токен в блеклист (Redis)
     Удаляет токен из куки.
-        """
+    """
 
     current_time = int(time.time())
-    remain_seconds = payloads['exp'] - current_time
+    remain_seconds = payload["exp"] - current_time
 
     await add_token_to_blacklist(
-        token=payloads['token_str'],
-        expire_seconds=remain_seconds
+        token=payload["token_str"], expire_seconds=remain_seconds
     )
     response.delete_cookie(key="access_token")
 
