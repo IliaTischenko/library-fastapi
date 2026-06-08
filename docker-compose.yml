@@ -4,9 +4,9 @@ services:
     image: postgres:15-alpine
     profiles: ["test"]
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: library_test
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
     ports:
     - "5433:5432"
     healthcheck:
@@ -64,6 +64,7 @@ services:
       timeout: 5s
       retries: 5
 
+
   redis:
     image: redis:7-alpine
     container_name: fastapi_library_redis
@@ -97,6 +98,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+
 
 volumes:
   postgres_data:
