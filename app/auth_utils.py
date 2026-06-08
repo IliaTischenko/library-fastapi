@@ -68,45 +68,36 @@ def create_access_token(user_id: int, role: str) -> str:
 
     return encoded_jwt
 
-#OLD
-def get_current_user_stateless(access_token: str | None = Cookie(default=None)) -> dict:
-    """
-    Проверяет JWT-токен, который пришёл в куках
-    - **access_token** - строка токена
-    """
-    if not access_token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated (Cookie missing)"
-        )
-
-    try:
-        payload = jwt.decode(access_token, SECRET_KEY, algorithms=[ALGORITHM])
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session token")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")
-
-    current_user = {
-        "id":  int(payload["sub"]),
-        "role": payload["role"]
-    }
-    return current_user
-
-
-
 
 class RoleChecker:
-    def __init__(self, requre_roles: tuple[str, ...] = ()):
-        self.requre_roles = requre_roles
+    def __init__(self, required_roles: tuple[str, ...] = ()):
+        self.required_roles = required_roles
 
     def __eq__(self, other):
-        return isinstance(other, RoleChecker) and self.requre_roles == other.requre_roles
+        return isinstance(other, RoleChecker) and self.required_roles == other.required_roles
 
     def __hash__(self):
-        return hash(self.requre_roles)
+        return hash(self.required_roles)
 
     async def __call__(self, access_token: str | None = Cookie(default=None)):
+        """
+        Получает JWT токен пользователя и его права доступа (роль).
+
+        Извлекает токен из HttpOnly Cookie, проверяет его наличие, валидность,
+         срок действия и отсутствие в blacklist(Redis),
+        После сверяет роль пользователя с требуемыми (self.required_roles)
+
+        Args:
+            access_token: jwt токен
+
+        Returns:
+            current_user - словарь payloads
+
+        Raises:
+            HTTPException: 401, если токен отсутствует, невалиден, просрочен или отозван.
+            HTTPException: 403, если у пользователя недостаточно прав (не совпадает роль).
+        """
+
         if not access_token:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -134,62 +125,10 @@ class RoleChecker:
             "token_str": access_token
         }
 
-        if self.requre_roles and current_user["role"] not in self.requre_roles:
+        if self.required_roles and current_user["role"] not in self.required_roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient rights"
             )
 
         return current_user
-
-
-#OLD
-def requre_roles(roles: list[str] = None):
-    """
-        Проверяет JWT-токен, который пришёл в куках
-        извлекает payloads, проверяет роль текущего пользователя с требуемой ролью
-        - **access_token**: строка токена
-        - **roles**: список ролей для получения доступа к роуту
-
-         Возвращает ID юзера, роль, строку токена и его время жизни
-        """
-    if roles is None:
-        roles = []
-
-    async def dependency(access_token: str | None = Cookie(default=None)):
-        if not access_token:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Not authenticated (Cookie missing/Token in blacklist)"
-            )
-
-        if await is_token_blacklisted(access_token):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Session revoked. Please log in again."
-            )
-
-
-        try:
-            payload = jwt.decode(access_token, SECRET_KEY, algorithms=[ALGORITHM])
-        except jwt.ExpiredSignatureError:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")
-        except jwt.InvalidTokenError:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session token")
-
-        current_user = {
-            "id": int(payload["sub"]),
-            "role": payload["role"],
-            "exp": int(payload["exp"]),
-            "token_str": access_token
-        }
-
-        if roles and current_user["role"] not in roles:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient rights"
-            )
-
-        return current_user
-
-    return dependency
